@@ -102,12 +102,12 @@ struct wakeup_sema_elem {
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
+	ASSERT (intr_get_level () == INTR_ON);
+	
 	struct wakeup_sema_elem wakeup = {.when = start, .ticks = ticks};
 
-	ASSERT (intr_get_level () == INTR_ON);
-
 	sema_init(&wakeup.semaphore, 0);
-	list_push_back(&sleep_threads, &wakeup.semaphore);
+	list_push_back(&sleep_threads, &wakeup.elem);
 	sema_down(&wakeup.semaphore);
 }
 
@@ -145,15 +145,10 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	
 	for (e = list_begin(&sleep_threads); e != list_end(&sleep_threads); e = list_next(e)) {
 		struct wakeup_sema_elem *sema_elem = list_entry(e, struct wakeup_sema_elem, elem);
-		
-		int64_t thread_sleep_from = sema_elem->when;
-		int64_t thread_sleep_through = sema_elem->ticks;
-		
-		struct semaphore sema = sema_elem->semaphore;
-		
-		if (timer_elapsed(thread_sleep_from) > thread_sleep_through) {
-			sema_up(&sema);
-		}
+	if (timer_elapsed(sema_elem->when) > sema_elem->ticks) {
+		sema_up(&sema_elem->semaphore);
+		list_remove(&sema_elem->elem);
+	}
 	}
 }
 
