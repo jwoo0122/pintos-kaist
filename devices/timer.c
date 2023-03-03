@@ -24,7 +24,7 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
-static struct list sleep_sema;
+static struct list sleep_threads;
 
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
@@ -46,7 +46,7 @@ timer_init (void) {
 
 	intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 	
-	list_init(&sleep_sema);
+	list_init(&sleep_threads);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -96,17 +96,18 @@ struct wakeup_sema_elem {
 	int64_t ticks;
 	struct semaphore semaphore;
 	struct list_elem elem;
-}
+};
+
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
-	struct wakeup_seam_elem wakeup = {.when = start, .ticks = ticks};
+	struct wakeup_sema_elem wakeup = {.when = start, .ticks = ticks};
 
 	ASSERT (intr_get_level () == INTR_ON);
 
 	sema_init(&wakeup.semaphore, 0);
-	list_push_back(&sleep_sema, &wakeup.semaphore);
+	list_push_back(&sleep_threads, &wakeup.semaphore);
 	sema_down(&wakeup.semaphore);
 }
 
@@ -133,12 +134,27 @@ void
 timer_print_stats (void) {
 	printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+	
+	struct list_elem *e;
+	
+	for (e = list_begin(&sleep_threads); e != list_end(&sleep_threads); e = list_next(e)) {
+		struct wakeup_sema_elem *sema_elem = list_entry(e, struct wakeup_sema_elem, elem);
+		
+		int64_t thread_sleep_from = sema_elem->when;
+		int64_t thread_sleep_through = sema_elem->ticks;
+		
+		struct semaphore sema = sema_elem->semaphore;
+		
+		if (timer_elapsed(thread_sleep_from) > thread_sleep_through) {
+			sema_up(&sema);
+		}
+	}
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
