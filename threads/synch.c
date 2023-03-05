@@ -187,19 +187,44 @@ lock_acquire (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
+	
+	list_push_back(&thread_current()->locks_waiting, &lock->welem);
+	lock_priority_donate(lock);
+	sema_down (&lock->semaphore);
+	
+	struct thread *current_thread = thread_current();
+	lock->holder = thread_current();
+	list_remove(&lock->welem);
+	list_push_back(&current_thread->locks, &lock->elem);
+}
 
+void lock_priority_donate(struct lock *lock) {
+	ASSERT(lock != NULL);
 	struct thread *current_thread = thread_current();
 	
 	if (lock->holder != NULL) {
 		if (lock->holder->priority < current_thread->priority) {
 			/* Priority donation */
 			lock->holder->priority = current_thread->priority;
+			
+			/* Recursive donation to holder's locks */
+			if (!list_empty(&lock->holder->locks)) {
+				struct list_elem *lck_elem;
+				for (lck_elem = list_front(&lock->holder->locks); lck_elem != list_end(&lock->holder->locks); lck_elem = list_next(lck_elem)) {
+					lock_priority_donate(list_entry(lck_elem, struct lock, elem));
+				}
+			}
+			
+			/* Recursive donation to holder's waiting locks */
+			if (!list_empty(&lock->holder->locks_waiting)) {
+				struct list_elem *lck_elem;
+				for (lck_elem = list_front(&lock->holder->locks_waiting); lck_elem != list_end(&lock->holder->locks_waiting); lck_elem = list_next(lck_elem)) {
+					lock_priority_donate(list_entry(lck_elem, struct lock, welem));
+				}
+			}
 		}
 	}
-	sema_down (&lock->semaphore);
-	lock->holder = thread_current ();
-	list_push_back(&current_thread->locks, &lock->elem);
-}
+};
 
 /* Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current

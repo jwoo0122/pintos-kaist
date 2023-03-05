@@ -94,6 +94,7 @@ struct thread {
 	int original_priority;
 
 	struct list locks;
+	struct list locks_waiting;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */

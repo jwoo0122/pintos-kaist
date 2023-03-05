@@ -433,6 +433,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->original_priority = priority;
 	t->magic = THREAD_MAGIC;
 	list_init(&t->locks);
+	list_init(&t->locks_waiting);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
