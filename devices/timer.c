@@ -91,24 +91,22 @@ timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
-struct wakeup_sema_elem {
-	int64_t when;
-	int64_t ticks;
-	struct semaphore semaphore;
-	struct list_elem elem;
-};
-
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 	ASSERT (intr_get_level () == INTR_ON);
+	
+	enum intr_level old_level;
+	old_level = intr_disable();
 
-	struct wakeup_sema_elem wakeup = {.when = start, .ticks = ticks};
+	struct thread *curr = thread_current();
+	curr->sleep_when = start;
+	curr->sleep_while = ticks;
 
-	sema_init(&wakeup.semaphore, 0);
-	list_push_back(&sleep_threads, &wakeup.elem);
-	sema_down(&wakeup.semaphore);
+	list_push_back(&sleep_threads, &curr->elem);
+	thread_block();
+	intr_set_level(old_level);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -141,13 +139,18 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
 	
-	struct list_elem *e;
-	
-	for (e = list_begin(&sleep_threads); e != list_end(&sleep_threads); e = list_next(e)) {
-		struct wakeup_sema_elem *sema_elem = list_entry(e, struct wakeup_sema_elem, elem);
-		if (timer_elapsed(sema_elem->when) >= sema_elem->ticks) {
-			sema_up(&sema_elem->semaphore);
-			list_remove(&sema_elem->elem);
+	if (!list_empty(&sleep_threads)) {
+		struct list_elem *e;
+		
+		e = list_begin(&sleep_threads);
+		while(e != list_end(&sleep_threads)) {
+			struct thread *sleep_thread = list_entry(e, struct thread, elem);
+			if (timer_elapsed(sleep_thread->sleep_when) >= sleep_thread->sleep_while) {
+				e = list_remove(&sleep_thread->elem);
+				thread_unblock(sleep_thread);
+			} else {
+				e = list_next(e);
+			}
 		}
 	}
 }
