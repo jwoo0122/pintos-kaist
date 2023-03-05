@@ -92,6 +92,9 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 	int original_priority;
+	
+	int64_t sleep_when;
+	int64_t sleep_while;
 
 	struct list locks;
 	struct list locks_waiting;
