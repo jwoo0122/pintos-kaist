@@ -317,19 +317,21 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	struct thread *curr = thread_current();
-	
-	if (!((curr->original_priority < curr->priority) && (new_priority < curr->priority))) {
-		thread_current ()->priority = new_priority;
-	}
-	
-	thread_current ()->original_priority = new_priority;
-
-	if (!list_empty(&ready_list)) {
-		struct thread *max_priority_waiter = list_entry(list_begin(&ready_list), struct thread, elem);
+	if (!thread_mlfqs) {
+		struct thread *curr = thread_current();
 		
-		if (max_priority_waiter->priority > new_priority) {
-			thread_yield();
+		if (!((curr->original_priority < curr->priority) && (new_priority < curr->priority))) {
+			thread_current ()->priority = new_priority;
+		}
+		
+		thread_current ()->original_priority = new_priority;
+
+		if (!list_empty(&ready_list)) {
+			struct thread *max_priority_waiter = list_entry(list_begin(&ready_list), struct thread, elem);
+			
+			if (max_priority_waiter->priority > new_priority) {
+				thread_yield();
+			}
 		}
 	}
 }
@@ -435,8 +437,14 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->status = THREAD_BLOCKED;
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
-	t->priority = priority;
-	t->original_priority = priority;
+	
+	if (thread_mlfqs) {
+		t->priority = PRI_DEFAULT;
+		t->original_priority = PRI_DEFAULT;
+	} else {
+		t->priority = priority;
+		t->original_priority = priority;
+	}
 	t->magic = THREAD_MAGIC;
 	t->sleep_when = 0;
 	t->sleep_while = 0;
