@@ -93,6 +93,8 @@ struct thread {
 	int priority;                       /* Priority. */
 	int original_priority;
 
+	struct list locks;
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
