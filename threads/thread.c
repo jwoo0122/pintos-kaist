@@ -28,6 +28,14 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+struct mlfqs_ready_list {
+	struct list_elem elem;
+	int priority_key;
+	struct list ready_threads;
+};
+
+static struct list mlfqs_ready_lists;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -109,6 +117,7 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	list_init (&mlfqs_ready_lists);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -152,6 +161,27 @@ thread_tick (void) {
 	/* Enforce preemption. */
 	if (++thread_ticks >= TIME_SLICE)
 		intr_yield_on_return ();
+}
+
+void
+thread_mlfqs_priority_recalculate() {
+	struct list_elem *e;
+	struct mlfqs_ready_list *ee;
+	struct list_elem *inner_e;
+	struct thread *t;
+	
+	if (!list_empty(&mlfqs_ready_lists)) {
+		for (e = list_front(&mlfqs_ready_lists); e != list_end(&mlfqs_ready_lists); e = list_next(e)) {
+			ee = list_entry(e, struct mlfqs_ready_list, elem);
+			
+			if (!list_empty(&ee->ready_threads)) {
+				for (inner_e = list_front(&ee->ready_threads); inner_e != list_end(&ee->ready_threads); inner_e = list_next(inner_e)) {
+					t = list_entry(inner_e, struct thread, elem);
+					t->priority = PRI_MAX - (0 / 4) - (t->niceness * 2);
+				}
+			}
+		}
+	}
 }
 
 /* Prints thread statistics. */

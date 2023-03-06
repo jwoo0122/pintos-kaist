@@ -153,6 +153,10 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 			}
 		}
 	}
+	
+	if (thread_mlfqs && (ticks % 4 == 0)) {
+		thread_mlfqs_priority_recalculate();
+	}
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
