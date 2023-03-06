@@ -395,11 +395,39 @@ thread_get_load_avg (void) {
 	}
 }
 
+void thread_list_update_all_recent_cpu(struct list *l) {
+	struct list_elem *e;
+	
+	if (!list_empty(l)) {
+		for (e = list_begin(l); e != list_end(l); e = list_next(e)) {
+			struct thread *t = list_entry(e, struct thread, elem);
+			t->recent_cpu_fixed_point = (2 * load_avg_fixed_point) * FIXED_POINT_CAP / ((2 * load_avg_fixed_point) + (1 * FIXED_POINT_CAP)) * t->recent_cpu_fixed_point + t->niceness * FIXED_POINT_CAP;
+		}
+	}
+}
+
+void thread_update_all_recent_cpu(void) {
+	thread_list_update_all_recent_cpu(&ready_list);
+	thread_list_update_all_recent_cpu(&destruction_req);
+}
+
+void thread_increase_recent_cpu(void) {
+	if (thread_current() != idle_thread) {
+		thread_current()->recent_cpu_fixed_point = thread_current()->recent_cpu_fixed_point + (1 * FIXED_POINT_CAP);
+	}
+}
+
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) {
 	/* TODO: Your implementation goes here */
-	return 0;
+	int64_t recent_cpu_fp = thread_current()->recent_cpu_fixed_point;
+
+	if (recent_cpu_fp > 0) {
+		return ((recent_cpu_fp + (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP) * 100;
+	} else {
+		return ((recent_cpu_fp - (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP) * 100;
+	}
 }
 
 bool

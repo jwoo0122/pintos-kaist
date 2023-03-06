@@ -93,6 +93,7 @@ struct thread {
 	int priority;                       /* Priority. */
 	int original_priority;
 	
+	int64_t recent_cpu_fixed_point;
 	int64_t sleep_when;
 	int64_t sleep_while;
 
@@ -130,6 +131,9 @@ void thread_tick (void);
 void thread_mlfqs_priority_recalculate (void);
 void thread_print_stats (void);
 void thread_update_load_avg(void);
+void thread_list_update_all_recent_cpu(struct list *);
+void thread_increase_recent_cpu(void);
+void thread_update_all_recent_cpu(void);
 
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
