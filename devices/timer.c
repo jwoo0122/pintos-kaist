@@ -154,8 +154,14 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 		}
 	}
 	
-	if (thread_mlfqs && (ticks % 4 == 0)) {
-		thread_mlfqs_priority_recalculate();
+	if (thread_mlfqs) {
+		if (ticks % 4 == 0) {
+			thread_mlfqs_priority_recalculate();
+		}
+		
+		if (ticks % TIMER_FREQ == 0) {
+			thread_update_load_avg();
+		}
 	}
 }
 

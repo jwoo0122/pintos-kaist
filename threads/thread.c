@@ -28,13 +28,7 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
-struct mlfqs_ready_list {
-	struct list_elem elem;
-	int priority_key;
-	struct list ready_threads;
-};
-
-static struct list mlfqs_ready_lists;
+int64_t load_avg_fixed_point;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -56,6 +50,9 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
+
+/* Fixed point cap */
+#define FIXED_POINT_CAP 16384
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -114,10 +111,10 @@ thread_init (void) {
 	lgdt (&gdt_ds);
 
 	/* Init the globla thread context */
+	load_avg_fixed_point = 0;
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
-	list_init (&mlfqs_ready_lists);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -166,22 +163,16 @@ thread_tick (void) {
 void
 thread_mlfqs_priority_recalculate() {
 	struct list_elem *e;
-	struct mlfqs_ready_list *ee;
-	struct list_elem *inner_e;
 	struct thread *t;
 	
-	if (!list_empty(&mlfqs_ready_lists)) {
-		for (e = list_front(&mlfqs_ready_lists); e != list_end(&mlfqs_ready_lists); e = list_next(e)) {
-			ee = list_entry(e, struct mlfqs_ready_list, elem);
-			
-			if (!list_empty(&ee->ready_threads)) {
-				for (inner_e = list_front(&ee->ready_threads); inner_e != list_end(&ee->ready_threads); inner_e = list_next(inner_e)) {
-					t = list_entry(inner_e, struct thread, elem);
-					t->priority = PRI_MAX - (0 / 4) - (t->niceness * 2);
-				}
-			}
+	if (!list_empty(&ready_list)) {
+		for (e = list_front(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
+			t = list_entry(e, struct thread, elem);
+			t->priority = PRI_MAX - (0 / 4) - (t->niceness * 2);
 		}
 	}
+
+	list_sort(&ready_list, thread_priority_compare, NULL);
 }
 
 /* Prints thread statistics. */
@@ -344,6 +335,16 @@ thread_yield (void) {
 	intr_set_level (old_level);
 }
 
+void thread_update_load_avg(void) {
+	int ready_thread_cnt = (int) list_size(&ready_list);
+	
+	if (thread_current() != idle_thread) {
+		ready_thread_cnt++;
+	}
+	
+	load_avg_fixed_point = ((int64_t) ((59 * FIXED_POINT_CAP / 60) * load_avg_fixed_point) / FIXED_POINT_CAP) + ((FIXED_POINT_CAP / 60) * ready_thread_cnt);
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
@@ -387,8 +388,11 @@ thread_get_nice (void) {
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	if (load_avg_fixed_point > 0) {
+		return ((load_avg_fixed_point + (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP) * 100;
+	} else {
+		return ((load_avg_fixed_point - (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP) * 100;
+	}
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
