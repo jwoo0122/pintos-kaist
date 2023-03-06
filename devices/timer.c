@@ -139,6 +139,17 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
 	
+	if (thread_mlfqs) {
+		thread_increase_recent_cpu();
+		if (ticks % 4 == 0) {
+			thread_mlfqs_priority_recalculate_all();
+		}
+		if (ticks % TIMER_FREQ == 0) {
+			thread_update_all_recent_cpu();
+			thread_update_load_avg();
+		}
+	}
+	
 	if (!list_empty(&sleep_threads)) {
 		struct list_elem *e;
 		
@@ -151,19 +162,6 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 			} else {
 				e = list_next(e);
 			}
-		}
-	}
-	
-	if (thread_mlfqs) {
-		if (ticks % TIMER_FREQ == 0) {
-			thread_update_load_avg();
-			thread_update_all_recent_cpu();
-		} else {
-			thread_increase_recent_cpu();
-		}
-		
-		if (ticks % 4 == 0) {
-			thread_mlfqs_priority_recalculate();
 		}
 	}
 }

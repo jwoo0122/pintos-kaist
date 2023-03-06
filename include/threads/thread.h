@@ -128,7 +128,8 @@ void thread_init (void);
 void thread_start (void);
 
 void thread_tick (void);
-void thread_mlfqs_priority_recalculate (void);
+void thread_mlfqs_priority_recalculate (struct thread *);
+void thread_mlfqs_priority_recalculate_all (void);
 void thread_print_stats (void);
 void thread_update_load_avg(void);
 void thread_list_update_all_recent_cpu(struct list *);

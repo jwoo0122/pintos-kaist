@@ -161,18 +161,45 @@ thread_tick (void) {
 }
 
 void
-thread_mlfqs_priority_recalculate() {
+thread_mlfqs_priority_recalculate(struct thread *t) {
+	if (t != idle_thread) {
+		int64_t new_priority_fp = (PRI_MAX * FIXED_POINT_CAP) - (t->recent_cpu_fixed_point / 4) - ((t->niceness * 2) * FIXED_POINT_CAP);
+		int new_priority = 0;
+
+		if (new_priority_fp > 0) {
+			new_priority = (int) ((new_priority_fp + (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP);
+		} else if (new_priority_fp < 0) {
+			new_priority = (int) ((new_priority_fp - (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP);
+		}
+
+		if (new_priority < 0){
+			new_priority = PRI_MIN;
+		} else if (new_priority > PRI_MAX) {
+			new_priority = PRI_MAX;
+		}
+
+		t->priority = new_priority;
+	}
+}
+
+void
+thread_mlfqs_priority_recalculate_all() {
 	struct list_elem *e;
 	struct thread *t;
 	
 	if (!list_empty(&ready_list)) {
 		for (e = list_front(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
-			t = list_entry(e, struct thread, elem);
-			t->priority = PRI_MAX - (0 / 4) - (t->niceness * 2);
+			thread_mlfqs_priority_recalculate(list_entry(e, struct thread, elem));
 		}
 	}
 
 	list_sort(&ready_list, thread_priority_compare, NULL);
+	
+	if (!list_empty(&ready_list)) {
+		if (list_entry(list_begin(&ready_list), struct thread, elem)->priority > thread_current()->priority) {
+			thread_yield();
+		}
+	}
 }
 
 /* Prints thread statistics. */
@@ -335,16 +362,6 @@ thread_yield (void) {
 	intr_set_level (old_level);
 }
 
-void thread_update_load_avg(void) {
-	int ready_thread_cnt = (int) list_size(&ready_list);
-	
-	if (thread_current() != idle_thread) {
-		ready_thread_cnt++;
-	}
-	
-	load_avg_fixed_point = ((int64_t) ((59 * FIXED_POINT_CAP / 60) * load_avg_fixed_point) / FIXED_POINT_CAP) + ((FIXED_POINT_CAP / 60) * ready_thread_cnt);
-}
-
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
@@ -375,8 +392,19 @@ thread_get_priority (void) {
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) {
-	/* FIXME: implement change niceness and yield */
+thread_set_nice (int nice) {
+	enum intr_level old_level = intr_disable();
+	thread_current()->niceness = nice;
+	thread_mlfqs_priority_recalculate(thread_current());
+
+	if (!list_empty(&ready_list)) {
+		struct thread *t = list_entry(list_begin(&ready_list), struct thread, elem);
+		
+		if (t->priority > thread_current()->priority) {
+			thread_yield();
+		}
+	}
+	intr_set_level(old_level);
 }
 
 /* Returns the current thread's nice value. */
@@ -385,14 +413,30 @@ thread_get_nice (void) {
 	return thread_current()->niceness;
 }
 
+void thread_update_load_avg(void) {
+	int ready_thread_cnt = (int) list_size(&ready_list);
+	
+	if (thread_current() != idle_thread) {
+		ready_thread_cnt++;
+	}
+
+	load_avg_fixed_point = (((59 * FIXED_POINT_CAP * load_avg_fixed_point) / 60) / FIXED_POINT_CAP) + ((((int64_t) FIXED_POINT_CAP * ready_thread_cnt) / 60));
+}
+
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) {
+	enum intr_level old_level = intr_disable();
+	int load_avg = 0;
+	
 	if (load_avg_fixed_point > 0) {
-		return ((load_avg_fixed_point + (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP) * 100;
-	} else {
-		return ((load_avg_fixed_point - (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP) * 100;
+		load_avg = (int) (((load_avg_fixed_point + (FIXED_POINT_CAP / 2)) * 100) / FIXED_POINT_CAP);
+	} else if (load_avg_fixed_point < 0) {
+		load_avg = (int) (((load_avg_fixed_point - (FIXED_POINT_CAP / 2)) * 100) / FIXED_POINT_CAP);
 	}
+	
+	intr_set_level(old_level);
+	return load_avg;
 }
 
 void thread_list_update_all_recent_cpu(struct list *l) {
@@ -401,14 +445,16 @@ void thread_list_update_all_recent_cpu(struct list *l) {
 	if (!list_empty(l)) {
 		for (e = list_begin(l); e != list_end(l); e = list_next(e)) {
 			struct thread *t = list_entry(e, struct thread, elem);
-			t->recent_cpu_fixed_point = (2 * load_avg_fixed_point) * FIXED_POINT_CAP / ((2 * load_avg_fixed_point) + (1 * FIXED_POINT_CAP)) * t->recent_cpu_fixed_point + t->niceness * FIXED_POINT_CAP;
+			
+			if (t != idle_thread) {
+				t->recent_cpu_fixed_point = ((2 * load_avg_fixed_point) * FIXED_POINT_CAP / ((2 * load_avg_fixed_point) + (1 * FIXED_POINT_CAP)) * t->recent_cpu_fixed_point) + (t->niceness * FIXED_POINT_CAP);
+			}
 		}
 	}
 }
 
 void thread_update_all_recent_cpu(void) {
 	thread_list_update_all_recent_cpu(&ready_list);
-	thread_list_update_all_recent_cpu(&destruction_req);
 }
 
 void thread_increase_recent_cpu(void) {
@@ -420,14 +466,18 @@ void thread_increase_recent_cpu(void) {
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) {
-	/* TODO: Your implementation goes here */
+	enum intr_level old_level = intr_disable();
 	int64_t recent_cpu_fp = thread_current()->recent_cpu_fixed_point;
+	int recent_cpu = 0;
 
 	if (recent_cpu_fp > 0) {
-		return ((recent_cpu_fp + (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP) * 100;
+		recent_cpu = (int) ((recent_cpu_fp + (FIXED_POINT_CAP / 2)) * 100 / FIXED_POINT_CAP);
 	} else {
-		return ((recent_cpu_fp - (FIXED_POINT_CAP / 2)) / FIXED_POINT_CAP) * 100;
+		recent_cpu = (int) ((recent_cpu_fp - (FIXED_POINT_CAP / 2)) * 100 / FIXED_POINT_CAP);
 	}
+	
+	intr_set_level(old_level);
+	return recent_cpu;
 }
 
 bool
@@ -498,18 +548,29 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->status = THREAD_BLOCKED;
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
+	t->magic = THREAD_MAGIC;
 	
+	// Which means this is in thread_init sequence.
+	if (running_thread()->status != THREAD_RUNNING) {
+		t->recent_cpu_fixed_point = 0;
+		t->niceness = 0;
+	} else {
+		// Ordinary thread creation.
+		t->recent_cpu_fixed_point = thread_current()->recent_cpu_fixed_point;
+		t->niceness = thread_current()->niceness;
+	}
+	t->sleep_when = 0;
+	t->sleep_while = 0;
+
 	if (thread_mlfqs) {
-		t->priority = PRI_DEFAULT;
-		t->original_priority = PRI_DEFAULT;
+		// Get thread priority based on recent_cpu value.
+		thread_mlfqs_priority_recalculate(t);
+		t->original_priority = t->priority;
 	} else {
 		t->priority = priority;
 		t->original_priority = priority;
 	}
-	t->magic = THREAD_MAGIC;
-	t->sleep_when = 0;
-	t->sleep_while = 0;
-	t->niceness = 0;
+
 	list_init(&t->locks);
 	list_init(&t->locks_waiting);
 }
