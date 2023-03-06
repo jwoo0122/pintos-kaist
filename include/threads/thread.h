@@ -98,6 +98,8 @@ struct thread {
 
 	struct list locks;
 	struct list locks_waiting;
+	
+	int niceness;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */

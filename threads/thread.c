@@ -345,14 +345,13 @@ thread_get_priority (void) {
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) {
-	/* TODO: Your implementation goes here */
+	/* FIXME: implement change niceness and yield */
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	return thread_current()->niceness;
 }
 
 /* Returns 100 times the system load average. */
@@ -448,6 +447,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->magic = THREAD_MAGIC;
 	t->sleep_when = 0;
 	t->sleep_while = 0;
+	t->niceness = 0;
 	list_init(&t->locks);
 	list_init(&t->locks_waiting);
 }
