@@ -24,6 +24,8 @@
    Do not modify this value. */
 #define THREAD_BASIC 0xd42df210
 
+fixed_p load_avg_fixed_point;
+
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -106,6 +108,7 @@ thread_init (void) {
 	lgdt (&gdt_ds);
 
 	/* Init the globla thread context */
+	load_avg_fixed_point = 0;
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
@@ -628,4 +631,48 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+int fixed_to_int(fixed_p x) {
+	if (x >= 0) {
+		return (int) ((x + FIXED_POINT_CAP / 2) / FIXED_POINT_CAP);
+	} else {
+		return (int) ((x - FIXED_POINT_CAP / 2) / FIXED_POINT_CAP);
+	}
+}
+
+fixed_p int_to_fixed(int n) {
+	return (fixed_p) n * FIXED_POINT_CAP;
+}
+
+fixed_p add_fixed_to_fixed(fixed_p x, fixed_p y) {
+	return x + y;
+}
+
+fixed_p sub_fixed_from_fixed(fixed_p x, fixed_p y) {
+	return x - y;
+}
+
+fixed_p add_fixed_to_int(fixed_p x, int n) {
+	return x + n * FIXED_POINT_CAP;
+}
+
+fixed_p sub_fixed_to_int(fixed_p x, int n) {
+	return x - n * FIXED_POINT_CAP;
+}
+
+fixed_p mul_fixed_with_fixed(fixed_p x, fixed_p y) {
+	return x * y / FIXED_POINT_CAP;
+}
+
+fixed_p mul_fixed_with_int(fixed_p x, int n) {
+	return x * n;
+}
+
+fixed_p div_fixed_by_fixed(fixed_p x, fixed_p y) {
+	return x * FIXED_POINT_CAP / y;
+}
+
+fixed_p div_fixed_by_int(fixed_p x, int n) {
+	return x / n;
 }

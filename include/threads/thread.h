@@ -21,12 +21,17 @@ enum thread_status {
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
+typedef int64_t fixed_p;
+
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+/* Fixed point cap */
+#define FIXED_POINT_CAP 16384
 
 /* A kernel thread or user process.
  *
@@ -151,5 +156,16 @@ int thread_get_load_avg (void);
 void do_iret (struct intr_frame *tf);
 
 bool thread_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux);
+
+int fixed_to_int(fixed_p x);
+fixed_p int_to_fixed(int n);
+fixed_p add_fixed_to_fixed(fixed_p x, fixed_p y);
+fixed_p sub_fixed_from_fixed(fixed_p x, fixed_p y);
+fixed_p add_fixed_to_int(fixed_p x, int n);
+fixed_p sub_int_from_fixed(fixed_p x, int n);
+fixed_p mul_fixed_with_fixed(fixed_p x, fixed_p y);
+fixed_p mul_fixed_with_int(fixed_p x, int n);
+fixed_p div_fixed_by_fixed(fixed_p x, fixed_p y);
+fixed_p div_fixed_by_int(fixed_p x, int n);
 
 #endif /* threads/thread.h */
