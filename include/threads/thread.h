@@ -100,12 +100,16 @@ struct thread {
 	
 	int64_t sleep_when;
 	int64_t sleep_while;
+	
+	int niceness;
+	fixed_p recent_cpu_fixed_point;
 
 	struct list locks;
 	struct list locks_waiting;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+	struct list_elem core_elem;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -158,6 +162,11 @@ void do_iret (struct intr_frame *tf);
 bool thread_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux);
 
 void update_load_avg(void);
+void up_recent_cpu(void);
+fixed_p get_new_recent_cpu(struct thread *t);
+void update_all_recent_cpu(void);
+fixed_p calculate_mlfqs_priority(struct thread *);
+void update_all_mlfqs_priority(void);
 
 int fixed_to_int(fixed_p x, int shift);
 int fixed_to_nearest_int(fixed_p x, int shift);
