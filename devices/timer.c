@@ -139,6 +139,12 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
 	
+	if (thread_mlfqs) {
+		if (ticks % TIMER_FREQ == 0) {
+			update_load_avg();
+		}
+	}
+	
 	if (!list_empty(&sleep_threads)) {
 		struct list_elem *e;
 		

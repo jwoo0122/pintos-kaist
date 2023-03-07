@@ -157,7 +157,10 @@ void do_iret (struct intr_frame *tf);
 
 bool thread_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux);
 
-int fixed_to_int(fixed_p x);
+void update_load_avg(void);
+
+int fixed_to_int(fixed_p x, int shift);
+int fixed_to_nearest_int(fixed_p x, int shift);
 fixed_p int_to_fixed(int n);
 fixed_p add_fixed_to_fixed(fixed_p x, fixed_p y);
 fixed_p sub_fixed_from_fixed(fixed_p x, fixed_p y);

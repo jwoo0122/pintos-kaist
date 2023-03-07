@@ -361,8 +361,8 @@ thread_get_nice (void) {
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	int load_avg = fixed_to_nearest_int(load_avg_fixed_point, 100);
+	return load_avg;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
@@ -633,11 +633,32 @@ allocate_tid (void) {
 	return tid;
 }
 
-int fixed_to_int(fixed_p x) {
-	if (x >= 0) {
-		return (int) ((x + FIXED_POINT_CAP / 2) / FIXED_POINT_CAP);
+void update_load_avg(void) {
+	int ready_list_cnt = (int) list_size(&ready_list);
+
+	if (thread_current() != idle_thread) {
+		ready_list_cnt++;
+	}
+
+	load_avg_fixed_point = add_fixed_to_fixed(mul_fixed_with_fixed(div_fixed_by_int(int_to_fixed(59), 60), load_avg_fixed_point),
+		mul_fixed_with_int(div_fixed_by_int(int_to_fixed(1), 60), ready_list_cnt));
+	
+	printf("load_average recalculation. value = %d.\n", fixed_to_nearest_int(load_avg_fixed_point, 100));
+}
+
+int fixed_to_int(fixed_p x, int shift) {
+	return (int) (x * shift / FIXED_POINT_CAP);
+}
+
+int fixed_to_nearest_int(fixed_p x, int shift) {
+	if (x == 0) {
+		return 0;
+	}
+	
+	if (x > 0) {
+		return (int) (((x * shift) + FIXED_POINT_CAP / 2) / FIXED_POINT_CAP);
 	} else {
-		return (int) ((x - FIXED_POINT_CAP / 2) / FIXED_POINT_CAP);
+		return (int) (((x * shift) - FIXED_POINT_CAP / 2) / FIXED_POINT_CAP);
 	}
 }
 
