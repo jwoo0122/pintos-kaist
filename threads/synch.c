@@ -198,7 +198,10 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!lock_held_by_current_thread (lock));
 	
 	list_push_back(&thread_current()->locks_waiting, &lock->welem);
-	lock_priority_donate(lock);
+	
+	if (!thread_mlfqs) {
+		lock_priority_donate(lock);
+	}
 	sema_down (&lock->semaphore);
 	
 	struct thread *current_thread = thread_current();
@@ -268,21 +271,23 @@ lock_release (struct lock *lock) {
 	lock->holder = NULL;
 	list_remove(&lock->elem);
 	
-	struct thread *curr = thread_current();
-	
-	int max_priority_from_waiters = curr->original_priority;
+	if (!thread_mlfqs) {
+		struct thread *curr = thread_current();
+		
+		int max_priority_from_waiters = curr->original_priority;
 
-	struct list_elem *lck_elem;
-	
-	if (!list_empty(&curr->locks)) {
-		for (lck_elem = list_front(&curr->locks); lck_elem != list_end(&curr->locks); lck_elem = list_next(lck_elem)) {
-			struct lock *lck = list_entry(lck_elem, struct lock, elem);
-			if (!list_empty(&lck->semaphore.waiters)) {
-				max_priority_from_waiters = list_entry(list_front(&lck->semaphore.waiters), struct thread, elem)->priority;
+		struct list_elem *lck_elem;
+		
+		if (!list_empty(&curr->locks)) {
+			for (lck_elem = list_front(&curr->locks); lck_elem != list_end(&curr->locks); lck_elem = list_next(lck_elem)) {
+				struct lock *lck = list_entry(lck_elem, struct lock, elem);
+				if (!list_empty(&lck->semaphore.waiters)) {
+					max_priority_from_waiters = list_entry(list_front(&lck->semaphore.waiters), struct thread, elem)->priority;
+				}
 			}
 		}
+		thread_current()->priority = max_priority_from_waiters;
 	}
-	thread_current()->priority = max_priority_from_waiters;
 	sema_up (&lock->semaphore);
 }
 
