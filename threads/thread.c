@@ -210,7 +210,6 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
-	list_push_back(&all_threads_list, &t->core_elem);
 
 	/* Add to run queue. */
 	thread_unblock (t);
@@ -301,7 +300,9 @@ thread_exit (void) {
 	/* Just set our status to dying and schedule another process.
 	   We will be destroyed during the call to schedule_tail(). */
 	intr_disable ();
-	list_remove(&thread_current()->core_elem);
+	if (thread_mlfqs) {
+		list_remove(&thread_current()->core_elem);
+	}
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
 }
@@ -463,6 +464,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 			t->recent_cpu_fixed_point = thread_current()->recent_cpu_fixed_point;
 			t->priority = calculate_mlfqs_priority(t);
 		}
+		
+		list_push_back(&all_threads_list, &t->core_elem);
 		
 		/* No usage for original priority value, just initiate it. */
 		t->original_priority = PRI_DEFAULT;
@@ -662,8 +665,6 @@ void update_load_avg(void) {
 	if (thread_current() != idle_thread) {
 		ready_list_cnt++;
 	}
-	
-	// printf("ready_list size is %d\n", ready_list_cnt);
 
 	load_avg_fixed_point = add_fixed_to_fixed(mul_fixed_with_fixed(div_fixed_by_int(int_to_fixed(59), 60), load_avg_fixed_point),
 		mul_fixed_with_int(div_fixed_by_int(int_to_fixed(1), 60), ready_list_cnt));
@@ -682,10 +683,9 @@ fixed_p get_new_recent_cpu(struct thread *t) {
 void update_all_recent_cpu(void) {
 	struct list_elem *e;
 
-	thread_current()->recent_cpu_fixed_point = get_new_recent_cpu(thread_current());
-
 	for (e = list_begin(&all_threads_list); e != list_end(&all_threads_list); e = list_next(e)) {
 		struct thread *t = list_entry(e, struct thread, core_elem);
+		fixed_p new_recent_cpu = get_new_recent_cpu(t);
 		t->recent_cpu_fixed_point = get_new_recent_cpu(t);
 	}
 }

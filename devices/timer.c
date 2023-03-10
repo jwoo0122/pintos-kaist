@@ -155,13 +155,13 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	}
 
 	if (thread_mlfqs) {
+		// For every tick increase recent_cpu by 1.
+		up_recent_cpu();
+
 		// For every second recalculate load_avg.
 		if (ticks % TIMER_FREQ == 0) {
 			update_load_avg();
 			update_all_recent_cpu();
-		} else {
-			// For every tick increase recent_cpu by 1.
-			up_recent_cpu();
 		}
 
 		if (ticks % 4 == 0) {
