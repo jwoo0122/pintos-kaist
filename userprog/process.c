@@ -22,6 +22,8 @@
 #include "vm/vm.h"
 #endif
 
+#define WORD 8
+
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
@@ -204,6 +206,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	for (;;) {}
 	return -1;
 }
 
@@ -334,9 +337,15 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (t->pml4 == NULL)
 		goto done;
 	process_activate (thread_current ());
+	
+	char parsed_file_name[128];
+	char *token_save_point, *arg;
+	
+	memcpy(parsed_file_name, file_name, strlen(file_name) + 1);
+	arg = strtok_r(parsed_file_name, " ", &token_save_point);
 
 	/* Open executable file. */
-	file = filesys_open (file_name);
+	file = filesys_open (arg);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
@@ -413,9 +422,53 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
+	 
+	/* Add args to stack */
+	
+	/* Just 128 size, no deeper meaning */
+	int address_cnt = 0;
+	void *arg_address[128];
+	size_t show_cnt;
+	
+	/* Push argv to stack */
+	while (arg != NULL) {
+		if_->rsp = if_->rsp - (strlen(arg) + 1);
+		memcpy(if_->rsp, arg, strlen(arg) + 1);
+		arg_address[address_cnt] = if_->rsp;
+		
+		show_cnt += strlen(arg) + 1;
+		address_cnt += 1;
+		arg = strtok_r(NULL, " ", &token_save_point);
+	}
+	
+	/* Round down rsp to word aligned */
+	while (if_->rsp % WORD != 0) {
+		if_->rsp--;
+		show_cnt++;
+		uint8_t zero = 0;
+		memcpy(if_->rsp, &zero, 1);
+	}
+	
+	/* Save argc */
+	int argc = address_cnt;
+	
+	/* Add argv address to stack */
+	while (address_cnt >= 0) {
+		if_->rsp -= WORD;
+		printf("rsp: %p\n", if_->rsp);
+		memcpy(if_->rsp, &(arg_address[address_cnt]), WORD);
+		address_cnt--;
+		show_cnt += WORD;
+	}
 
-	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+	if_->R.rdi = argc;
+	if_->R.rsi = arg_address[0];
+	
+	if_->rsp -= WORD;
+	memset(if_->rsp, 0, sizeof(void *));
+	show_cnt += WORD;
+
+	hex_dump(if_->rsp, if_->rsp, show_cnt, true);
 
 	success = true;
 
