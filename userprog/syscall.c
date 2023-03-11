@@ -24,6 +24,12 @@ void syscall_handler (struct intr_frame *);
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
 
+static void user_memory_bound_check(void *address) {
+	if (!is_user_vaddr(address) || address == NULL) {
+		thread_exit();
+	}
+}
+
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
