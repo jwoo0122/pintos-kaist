@@ -30,6 +30,20 @@ static void user_memory_bound_check(void *address) {
 	}
 }
 
+static void halt(void) {
+	power_off();
+}
+
+static void exit(int status UNUSED) {
+	thread_exit();
+}
+
+static int fork(const char *thread_name, struct intr_frame * if_) {
+	// TODO: test current thread name;
+	// struct thread *curr = thread_current();
+	return process_fork(thread_name, if_);
+}
+
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -48,10 +62,13 @@ void
 syscall_handler (struct intr_frame *f UNUSED) {
 	switch (f->R.rax) {
 		case SYS_HALT:
+			halt();
 			break;
 		case SYS_EXIT:
+			exit(f->R.rdi);
 			break;
 		case SYS_FORK:
+			fork(f->R.rdi, f);
 			break;
 		case SYS_EXEC:
 			break;
