@@ -231,7 +231,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	// for (;;) {}
+	for (;;) {}
 	return -1;
 }
 
@@ -478,17 +478,23 @@ load (const char *file_name, struct intr_frame *if_) {
 	int argc = address_cnt;
 	
 	/* Add argv address to stack */
+	/* First, add 0 word space */
+	if_->rsp -= WORD;
+	memset(if_->rsp, 0, WORD);
+	address_cnt--;
+	show_cnt += WORD;
+	
 	while (address_cnt >= 0) {
 		if_->rsp -= WORD;
-		printf("rsp: %p\n", if_->rsp);
 		memcpy(if_->rsp, &(arg_address[address_cnt]), WORD);
 		address_cnt--;
 		show_cnt += WORD;
 	}
 
 	if_->R.rdi = argc;
-	if_->R.rsi = arg_address[0];
+	if_->R.rsi = if_->rsp;
 	
+	/* Add Return address */
 	if_->rsp -= WORD;
 	memset(if_->rsp, 0, sizeof(void *));
 	show_cnt += WORD;
