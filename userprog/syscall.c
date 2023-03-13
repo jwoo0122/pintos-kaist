@@ -39,7 +39,7 @@ static void halt(void) {
 static void exit(int status) {
 	struct thread *curr = thread_current();
 	curr->exit_code = status;
-	printf("%s: exit(%d)\n", thread_name(), status); 
+	printf("%s: exit(%d)\n", curr->name, status); 
 	/* This will call process_exit */
 	thread_exit();
 }
