@@ -479,6 +479,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->sleep_while = 0;
 	list_init(&t->locks);
 	list_init(&t->locks_waiting);
+	list_init(&t->childs);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

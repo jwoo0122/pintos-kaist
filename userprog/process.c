@@ -121,6 +121,9 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
+	
+	/* Check whether parent page table entry is writable */
+	writable = is_writable(pte);
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		// FIXME: do error handling what?
 		return false;
@@ -142,6 +145,9 @@ __do_fork (void *f) {
 	struct thread *current = thread_current ();
 	struct intr_frame *parent_if = _f->parent_if;
 	bool succ = true;
+	
+	/* 0. Add child to parent list */
+	list_push_back(&parent->childs, &current->to_child);
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
