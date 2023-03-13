@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -106,13 +107,17 @@ struct thread {
 
 	struct list locks;
 	struct list locks_waiting;
-	
-	struct list childs;
-	struct list_elem to_child;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 	struct list_elem core_elem;
+	
+	struct list childs;
+	struct list_elem child_elem;
+	
+	struct semaphore exit_try_signal;
+	struct semaphore exit_catch_signal;
+	int exit_code;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -154,6 +159,8 @@ void thread_yield (void);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
+
+struct thread* thread_get_child_by_pid(tid_t);
 
 int thread_get_nice (void);
 void thread_set_nice (int);

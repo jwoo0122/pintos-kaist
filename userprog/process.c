@@ -51,9 +51,15 @@ process_create_initd (const char *file_name) {
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
+	
+	char parsed_file_name[128];
+	char *token_save_point, *arg;
+	
+	memcpy(parsed_file_name, file_name, strlen(file_name) + 1);
+	arg = strtok_r(parsed_file_name, " ", &token_save_point);
 
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	tid = thread_create (arg, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
@@ -145,9 +151,6 @@ __do_fork (void *f) {
 	struct thread *current = thread_current ();
 	struct intr_frame *parent_if = _f->parent_if;
 	bool succ = true;
-	
-	/* 0. Add child to parent list */
-	list_push_back(&parent->childs, &current->to_child);
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
@@ -227,12 +230,29 @@ process_exec (void *f_name) {
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) {
-	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
-	 * XXX:       to add infinite loop here before
-	 * XXX:       implementing the process_wait. */
-	for (;;) {}
-	return -1;
+process_wait (tid_t child_tid ) {
+	struct thread *curr = thread_current();
+	
+	// 1. Find child thread from tid
+	struct thread *child = thread_get_child_by_pid(child_tid);
+
+	if (child == NULL) {
+		// Something went wrong. Maybe child is destroyed by kernel.
+		return -1;
+	}
+	
+	// 2. Wait it signal exit try
+	sema_down(&child->exit_try_signal);
+	
+	// 3. Child tried to exit. Let it do that.
+	// Should retrieve exit code after wait try signal. Cause
+	// exit code is set when try signal is triggered.
+	int exit_code = child->exit_code;
+	// Remove child from my child list
+	list_remove(&child->child_elem);
+	sema_up(&child->exit_catch_signal);
+	
+	return exit_code;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
@@ -243,7 +263,14 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
+	
+	/* Signal to parent that child is trying to exit */
+	sema_up(&curr->exit_try_signal);
+	
+	/* Wait for parent to accept my exit */
+	sema_down(&curr->exit_catch_signal);
 
+	/* Parent received my status. Now I can exit my self. */
 	process_cleanup ();
 }
 
@@ -499,7 +526,8 @@ load (const char *file_name, struct intr_frame *if_) {
 	memset(if_->rsp, 0, sizeof(void *));
 	show_cnt += WORD;
 
-	hex_dump(if_->rsp, if_->rsp, show_cnt, true);
+	// Debug stack frame
+	// hex_dump(if_->rsp, if_->rsp, show_cnt, true);
 
 	success = true;
 
