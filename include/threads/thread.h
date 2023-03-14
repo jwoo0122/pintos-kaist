@@ -118,6 +118,8 @@ struct thread {
 	struct semaphore exit_try_signal;
 	struct semaphore exit_catch_signal;
 	int exit_code;
+	
+	struct semaphore fork_signal;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

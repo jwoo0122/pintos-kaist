@@ -92,8 +92,11 @@ process_fork (const char *name, struct intr_frame *if_) {
 	f.parent_if = if_;
 	f.t = thread_current();
 	
-	tid_t tid = thread_create (name,
-			PRI_DEFAULT, __do_fork, &f);
+	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, &f);
+	
+	/* Wait until child process do_fork complete */
+	sema_down(&f.t->fork_signal);
+	
 	return tid;
 }
 
@@ -154,7 +157,7 @@ __do_fork (void *f) {
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
-
+	
 	/* fork should return 0 in child process */
 	if_.R.rax = 0;
 
@@ -180,6 +183,9 @@ __do_fork (void *f) {
 	 * TODO:       the resources of parent.*/
 
 	process_init ();
+
+	/* Signal to parent that fork is complete */
+	sema_up(&parent->fork_signal);
 
 	/* Finally, switch to the newly created process. */
 	if (succ)

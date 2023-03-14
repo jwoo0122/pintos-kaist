@@ -45,9 +45,8 @@ static void exit(int status) {
 }
 
 static int fork(const char *thread_name, struct intr_frame * if_) {
-	// TODO: test current thread name;
-	// struct thread *curr = thread_current();
-	return process_fork(thread_name, if_);
+	tid_t tid = process_fork(thread_name, if_);
+	return tid;
 }
 
 static int wait(tid_t tid) {
@@ -82,6 +81,9 @@ syscall_init (void) {
 }
 
 /* The main system call interface */
+/* NOTE: should set rax as return value, cause curernt mode is kernel mode
+	So barely return the value does nothing useful.
+*/
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	switch (f->R.rax) {
@@ -92,12 +94,12 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			exit(f->R.rdi);
 			break;
 		case SYS_FORK:
-			fork(f->R.rdi, f);
+			f->R.rax = fork(f->R.rdi, f);
 			break;
 		case SYS_EXEC:
 			break;
 		case SYS_WAIT:
-			return wait(f->R.rdi);
+			f->R.rax =  wait(f->R.rdi);
 			break;
 		case SYS_CREATE:
 			break;
