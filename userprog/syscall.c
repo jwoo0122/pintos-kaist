@@ -4,6 +4,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/loader.h"
+#include "threads/palloc.h"
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
@@ -67,6 +68,17 @@ static int write (int fd, const void *buffer, unsigned size) {
 	return writed_buffer_size;
 }
 
+static int exec (const char *cmd_line) {
+	/* Because in process_exec, page map of current thread is all expired. 
+		So you have to copy the data in cmd_line to kernel page, to be used in after process_cleanup.
+	*/
+	
+	char * copied_cmd_line = palloc_get_page(PAL_ZERO);
+	strlcpy(copied_cmd_line, cmd_line, strlen(cmd_line) + 1);
+	
+	return process_exec(copied_cmd_line);
+}
+
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -97,9 +109,10 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = fork(f->R.rdi, f);
 			break;
 		case SYS_EXEC:
+			f->R.rax = exec(f->R.rdi);
 			break;
 		case SYS_WAIT:
-			f->R.rax =  wait(f->R.rdi);
+			f->R.rax = wait(f->R.rdi);
 			break;
 		case SYS_CREATE:
 			break;
@@ -123,5 +136,4 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_CLOSE:
 			break;
 	}
-	// thread_exit();
 }
