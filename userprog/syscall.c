@@ -28,8 +28,10 @@ void syscall_handler (struct intr_frame *);
 #define STDOUT_FD 1
 
 static void user_memory_bound_check(void *address) {
-	if (!is_user_vaddr(address) || address == NULL) {
-		thread_exit();
+	struct thread *curr = thread_current();
+	
+	if (!is_user_vaddr(address) || address == NULL || pml4_get_page(curr->pml4, address) == NULL) {
+		exit(-1);
 	}
 }
 
@@ -72,6 +74,8 @@ static int exec (const char *cmd_line) {
 	/* Because in process_exec, page map of current thread is all expired. 
 		So you have to copy the data in cmd_line to kernel page, to be used in after process_cleanup.
 	*/
+
+	user_memory_bound_check(cmd_line);
 	
 	char * copied_cmd_line = palloc_get_page(PAL_ZERO);
 	strlcpy(copied_cmd_line, cmd_line, strlen(cmd_line) + 1);
