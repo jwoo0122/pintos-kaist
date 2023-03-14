@@ -71,16 +71,19 @@ static int write (int fd, const void *buffer, unsigned size) {
 }
 
 static int exec (const char *cmd_line) {
+	user_memory_bound_check(cmd_line);
+	
 	/* Because in process_exec, page map of current thread is all expired. 
 		So you have to copy the data in cmd_line to kernel page, to be used in after process_cleanup.
 	*/
-
-	user_memory_bound_check(cmd_line);
-	
 	char * copied_cmd_line = palloc_get_page(PAL_ZERO);
 	strlcpy(copied_cmd_line, cmd_line, strlen(cmd_line) + 1);
 	
-	return process_exec(copied_cmd_line);
+	int result = process_exec(copied_cmd_line);
+	
+	if (result == -1) {
+		exit(-1);
+	}
 }
 
 void
@@ -113,7 +116,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = fork(f->R.rdi, f);
 			break;
 		case SYS_EXEC:
-			f->R.rax = exec(f->R.rdi);
+			exec(f->R.rdi);
 			break;
 		case SYS_WAIT:
 			f->R.rax = wait(f->R.rdi);
