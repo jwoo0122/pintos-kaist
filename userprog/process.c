@@ -55,7 +55,7 @@ process_create_initd (const char *file_name) {
 	char parsed_file_name[128];
 	char *token_save_point, *arg;
 	
-	memcpy(parsed_file_name, file_name, strlen(file_name) + 1);
+	memcpy(parsed_file_name, fn_copy, strlen(fn_copy) + 1);
 	arg = strtok_r(parsed_file_name, " ", &token_save_point);
 
 	/* Create a new thread to execute FILE_NAME. */
@@ -215,8 +215,12 @@ process_exec (void *f_name) {
 	/* And then load the binary */
 	success = load (file_name, &_if);
 
-	/* If load failed, quit. */
+	/* To prepare process_cleanup, f_name is manually allocated (palloc)
+		in caller. We should free it to prevent memory leak.
+	*/
 	palloc_free_page (file_name);
+
+	/* If load failed, quit. */
 	if (!success)
 		return -1;
 
@@ -531,9 +535,6 @@ load (const char *file_name, struct intr_frame *if_) {
 	if_->rsp -= WORD;
 	memset(if_->rsp, 0, sizeof(void *));
 	show_cnt += WORD;
-
-	// Debug stack frame
-	// hex_dump(if_->rsp, if_->rsp, show_cnt, true);
 
 	success = true;
 
