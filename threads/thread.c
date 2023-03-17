@@ -11,6 +11,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "filesys/filesys.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -418,6 +419,39 @@ thread_priority_compare(const struct list_elem *a, const struct list_elem *b, vo
 	return a_thread->priority > b_thread->priority;
 }
 
+static bool
+thread_file_descriptors_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+	struct file_with_descriptor *f_fd_a = list_entry(a, struct file_with_descriptor, elem);
+	struct file_with_descriptor *f_fd_b = list_entry(b, struct file_with_descriptor, elem);
+	
+	return f_fd_a < f_fd_b;
+}
+
+int
+thread_get_min_fd(void) {
+	struct thread *curr = thread_current();
+	
+	/* 0 = stdin, 1 = stdout, 2 = stderr */
+	int min_fd = 3;
+	struct list_elem *f_fd_elem;
+	
+	list_sort(&curr->file_descriptors, thread_file_descriptors_compare, NULL);
+	
+	if (!list_empty(&curr->file_descriptors)) {
+		for (f_fd_elem = list_begin(&curr->file_descriptors); f_fd_elem != list_end(&curr->file_descriptors); f_fd_elem = list_next(f_fd_elem)) {
+			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
+			
+			printf("current files descrptor: %d\n", f_fd->descriptor);
+			
+			if (f_fd->descriptor == min_fd) {
+				min_fd++;
+			}
+		}
+	}
+	
+	return min_fd;
+}
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -505,9 +539,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->sleep_when = 0;
 	t->sleep_while = 0;
 	t->exit_code = 0;
+	
 	list_init(&t->locks);
 	list_init(&t->locks_waiting);
 	list_init(&t->childs);
+	list_init(&t->file_descriptors);
 	sema_init(&t->exit_try_signal, 0);
 	sema_init(&t->exit_catch_signal, 0);
 	sema_init(&t->fork_signal, 0);

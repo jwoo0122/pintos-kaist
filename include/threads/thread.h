@@ -120,6 +120,8 @@ struct thread {
 	int exit_code;
 	
 	struct semaphore fork_signal;
+	
+	struct list file_descriptors;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -168,6 +170,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+int thread_get_min_fd (void);
 
 void do_iret (struct intr_frame *tf);
 

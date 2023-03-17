@@ -183,6 +183,24 @@ __do_fork (void *f) {
 	 * TODO:       the resources of parent.*/
 
 	process_init ();
+	
+	if (!list_empty(&parent->file_descriptors)) {
+		struct list_elem *f_fd_elem;
+		
+		for (f_fd_elem = list_begin(&parent->file_descriptors); f_fd_elem != list_end(&parent->file_descriptors); f_fd_elem = list_next(f_fd_elem)) {
+			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
+			
+			struct file_with_descriptor cfile;
+			cfile._file = file_duplicate(f_fd->_file);
+			
+			if (cfile._file == NULL) {
+				goto error;
+			}
+			
+			cfile.descriptor = f_fd->descriptor;
+			list_push_back(&current->file_descriptors, &cfile.elem);
+		}
+	}
 
 	/* Signal to parent that fork is complete */
 	sema_up(&parent->fork_signal);

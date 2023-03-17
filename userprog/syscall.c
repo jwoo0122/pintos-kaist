@@ -8,6 +8,8 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -86,6 +88,30 @@ static int exec (const char *cmd_line) {
 	}
 }
 
+static bool create(const char *filename, unsigned init_size) {
+	user_memory_bound_check(filename);
+	return filesys_create(filename, init_size);
+}
+
+static int open(const char *filename) {
+	user_memory_bound_check(filename);
+	struct thread *curr = thread_current();
+	
+	struct file *_file = filesys_open(filename);
+	
+	if (_file == NULL) {
+		return -1;
+	}
+	
+	struct file_with_descriptor f_fd;
+	f_fd._file = _file;
+	f_fd.descriptor = thread_get_min_fd();
+	
+	list_push_back(&curr->file_descriptors, &f_fd.elem);
+	
+	return f_fd.descriptor;
+}
+
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -122,10 +148,12 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = wait(f->R.rdi);
 			break;
 		case SYS_CREATE:
+			f->R.rax = create(f->R.rdi, f->R.rsi);
 			break;
 		case SYS_REMOVE:
 			break;
 		case SYS_OPEN:
+			f->R.rax = open(f->R.rdi);
 			break;
 		case SYS_FILESIZE:
 			break;
