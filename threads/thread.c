@@ -441,8 +441,6 @@ thread_get_min_fd(void) {
 		for (f_fd_elem = list_begin(&curr->file_descriptors); f_fd_elem != list_end(&curr->file_descriptors); f_fd_elem = list_next(f_fd_elem)) {
 			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
 			
-			printf("current files descrptor: %d\n", f_fd->descriptor);
-			
 			if (f_fd->descriptor == min_fd) {
 				min_fd++;
 			}

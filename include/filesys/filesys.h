@@ -10,8 +10,8 @@
 #define ROOT_DIR_SECTOR 1       /* Root directory file inode sector. */
 
 struct file_with_descriptor {
-  struct file *_file;
   int descriptor;
+  struct file *_file;
   struct list_elem elem;
 };
 
