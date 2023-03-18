@@ -146,7 +146,32 @@ static int read (int fd, void *buffer, unsigned size) {
 	user_memory_bound_check(buffer);
 	
 	struct file *f = fd_to_file(fd);
+	
+	if (f == NULL) {	
+		return -1;
+	}
+	
 	return file_read(f, buffer, size);
+}
+
+static void seek (int fd, unsigned pos) {
+	struct file *f = fd_to_file(fd);
+	
+	if (f == NULL) {	
+		return -1;
+	}
+	
+	file_seek(f, pos);
+}
+
+static unsigned tell (int fd) {
+	struct file *f = fd_to_file(fd);
+	
+	if (f == NULL) {	
+		return -1;
+	}
+	
+	return file_tell(f);
 }
 
 void
@@ -202,8 +227,10 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
 			break;
 		case SYS_SEEK:
+			seek(f->R.rdi, f->R.rsi);
 			break;
 		case SYS_TELL:
+			f->R.rax = tell(f->R.rdi);
 			break;
 		case SYS_CLOSE:
 			break;
