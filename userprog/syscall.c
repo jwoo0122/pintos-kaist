@@ -39,7 +39,7 @@ static struct file *fd_to_file(int fd) {
 			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
 			
 			if (f_fd->descriptor == fd) {
-				return f_fd;
+				return f_fd->_file;
 			}
 		}
 	}
