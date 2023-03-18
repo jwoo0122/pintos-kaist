@@ -30,7 +30,7 @@ void syscall_handler (struct intr_frame *);
 
 #define STDOUT_FD 1
 
-static struct file *fd_to_file(int fd) {
+static struct file_with_descriptor *fd_to_file(int fd) {
 	struct thread *curr = thread_current();
 	struct list_elem *f_fd_elem;
 	
@@ -39,7 +39,7 @@ static struct file *fd_to_file(int fd) {
 			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
 			
 			if (f_fd->descriptor == fd) {
-				return f_fd->_file;
+				return f_fd;
 			}
 		}
 	}
@@ -68,6 +68,8 @@ static void exit(int status) {
 }
 
 static int fork(const char *thread_name, struct intr_frame * if_) {
+	user_memory_bound_check(thread_name);
+	
 	tid_t tid = process_fork(thread_name, if_);
 	return tid;
 }
@@ -133,45 +135,60 @@ static int open(const char *filename) {
 }
 
 static int filesize(int fd) {
-	struct file *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file(fd);
 	
 	if (f == NULL) {	
 		return -1;
 	}
 	
-	return file_length(f);
+	return file_length(f->_file);
 }
 
 static int read (int fd, void *buffer, unsigned size) {
 	user_memory_bound_check(buffer);
 	
-	struct file *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file(fd);
 	
 	if (f == NULL) {	
 		return -1;
 	}
 	
-	return file_read(f, buffer, size);
+	return file_read(f->_file, buffer, size);
 }
 
 static void seek (int fd, unsigned pos) {
-	struct file *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file(fd);
 	
 	if (f == NULL) {	
 		return -1;
 	}
 	
-	file_seek(f, pos);
+	file_seek(f->_file, pos);
 }
 
 static unsigned tell (int fd) {
-	struct file *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file(fd);
 	
 	if (f == NULL) {	
 		return -1;
 	}
 	
-	return file_tell(f);
+	return file_tell(f->_file);
+}
+
+static bool remove (const char *file) {
+	user_memory_bound_check(file);
+	
+	return filesys_remove(file);
+}
+
+static void close(int fd) {
+	struct file_with_descriptor *f = fd_to_file(fd);
+	
+	if (f != NULL) {
+		list_remove(&f->elem);
+		free(f->_file);
+	}
 }
 
 void
@@ -213,6 +230,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = create(f->R.rdi, f->R.rsi);
 			break;
 		case SYS_REMOVE:
+			f->R.rax = remove(f->R.rdi);
 			break;
 		case SYS_OPEN:
 			f->R.rax = open(f->R.rdi);
@@ -233,6 +251,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax = tell(f->R.rdi);
 			break;
 		case SYS_CLOSE:
+			close(f->R.rdi);
 			break;
 	}
 }
