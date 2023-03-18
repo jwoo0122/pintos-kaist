@@ -30,7 +30,7 @@ void syscall_handler (struct intr_frame *);
 
 #define STDOUT_FD 1
 
-static struct file_with_descriptor *fd_to_file(int fd) {
+static struct file_with_descriptor *fd_to_file_with_descriptor(int fd) {
 	struct thread *curr = thread_current();
 	struct list_elem *f_fd_elem;
 	
@@ -87,6 +87,9 @@ static int write (int fd, const void *buffer, unsigned size) {
 		/* FIXME: size should not be over than few hundread bytes */
 		writed_buffer_size = size;
 		putbuf(buffer, size);
+	} else {
+		struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
+		writed_buffer_size = file_write(f->_file, buffer, size);
 	}
 	
 	return writed_buffer_size;
@@ -135,7 +138,7 @@ static int open(const char *filename) {
 }
 
 static int filesize(int fd) {
-	struct file_with_descriptor *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
 	
 	if (f == NULL) {	
 		return -1;
@@ -147,7 +150,7 @@ static int filesize(int fd) {
 static int read (int fd, void *buffer, unsigned size) {
 	user_memory_bound_check(buffer);
 	
-	struct file_with_descriptor *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
 	
 	if (f == NULL) {	
 		return -1;
@@ -157,7 +160,7 @@ static int read (int fd, void *buffer, unsigned size) {
 }
 
 static void seek (int fd, unsigned pos) {
-	struct file_with_descriptor *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
 	
 	if (f == NULL) {	
 		return -1;
@@ -167,7 +170,7 @@ static void seek (int fd, unsigned pos) {
 }
 
 static unsigned tell (int fd) {
-	struct file_with_descriptor *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
 	
 	if (f == NULL) {	
 		return -1;
@@ -183,7 +186,7 @@ static bool remove (const char *file) {
 }
 
 static void close(int fd) {
-	struct file_with_descriptor *f = fd_to_file(fd);
+	struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
 	
 	if (f != NULL) {
 		list_remove(&f->elem);
