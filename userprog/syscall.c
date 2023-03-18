@@ -28,6 +28,7 @@ void syscall_handler (struct intr_frame *);
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
 
+#define STDIN_FD 0
 #define STDOUT_FD 1
 
 static struct file_with_descriptor *fd_to_file_with_descriptor(int fd) {
@@ -83,14 +84,27 @@ static int write (int fd, const void *buffer, unsigned size) {
 	
 	int writed_buffer_size;
 	
+	if (fd == STDIN_FD) {
+		return -1;
+	}
+	
+	lock_acquire(&access_filesys);
 	if (fd == STDOUT_FD) {
 		/* FIXME: size should not be over than few hundread bytes */
 		writed_buffer_size = size;
 		putbuf(buffer, size);
 	} else {
 		struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
+		
+		if (f == NULL) {
+			lock_release(&access_filesys);
+			return -1;
+		}
+		
 		writed_buffer_size = file_write(f->_file, buffer, size);
 	}
+	
+	lock_release(&access_filesys);
 	
 	return writed_buffer_size;
 }
@@ -113,16 +127,23 @@ static int exec (const char *cmd_line) {
 
 static bool create(const char *filename, unsigned init_size) {
 	user_memory_bound_check(filename);
-	return filesys_create(filename, init_size);
+	
+	lock_acquire(&access_filesys);
+	bool result = filesys_create(filename, init_size);
+	lock_release(&access_filesys);
+	
+	return result;
 }
 
 static int open(const char *filename) {
 	user_memory_bound_check(filename);
 	struct thread *curr = thread_current();
 	
+	lock_acquire(&access_filesys);
 	struct file *_file = filesys_open(filename);
 	
 	if (_file == NULL) {
+		lock_release(&access_filesys);
 		return -1;
 	}
 	
@@ -134,6 +155,8 @@ static int open(const char *filename) {
 	
 	list_push_back(&curr->file_descriptors, &f_fd->elem);
 	
+	lock_release(&access_filesys);
+	
 	return newfd;
 }
 
@@ -144,7 +167,11 @@ static int filesize(int fd) {
 		return -1;
 	}
 	
-	return file_length(f->_file);
+	lock_acquire(&access_filesys);
+	int result = file_length(f->_file);
+	lock_release(&access_filesys);
+	
+	return result;
 }
 
 static int read (int fd, void *buffer, unsigned size) {
@@ -156,7 +183,11 @@ static int read (int fd, void *buffer, unsigned size) {
 		return -1;
 	}
 	
-	return file_read(f->_file, buffer, size);
+	lock_acquire(&access_filesys);
+	int result = file_read(f->_file, buffer, size);
+	lock_release(&access_filesys);
+	
+	return result;
 }
 
 static void seek (int fd, unsigned pos) {
@@ -166,7 +197,9 @@ static void seek (int fd, unsigned pos) {
 		return -1;
 	}
 	
+	lock_acquire(&access_filesys);
 	file_seek(f->_file, pos);
+	lock_release(&access_filesys);
 }
 
 static unsigned tell (int fd) {
@@ -176,13 +209,21 @@ static unsigned tell (int fd) {
 		return -1;
 	}
 	
-	return file_tell(f->_file);
+	lock_acquire(&access_filesys);
+	unsigned result = file_tell(f->_file);
+	lock_release(&access_filesys);
+	
+	return result;
 }
 
 static bool remove (const char *file) {
 	user_memory_bound_check(file);
 	
-	return filesys_remove(file);
+	lock_acquire(&access_filesys);
+	bool result = filesys_remove(file);
+	lock_release(&access_filesys);
+	
+	return result;
 }
 
 static void close(int fd) {
@@ -199,6 +240,8 @@ syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
 			((uint64_t)SEL_KCSEG) << 32);
 	write_msr(MSR_LSTAR, (uint64_t) syscall_entry);
+	
+	lock_init(&access_filesys);
 
 	/* The interrupt service rountine should not serve any interrupts
 	 * until the syscall_entry swaps the userland stack to the kernel

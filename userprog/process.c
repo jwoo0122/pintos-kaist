@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -190,15 +191,15 @@ __do_fork (void *f) {
 		for (f_fd_elem = list_begin(&parent->file_descriptors); f_fd_elem != list_end(&parent->file_descriptors); f_fd_elem = list_next(f_fd_elem)) {
 			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
 			
-			struct file_with_descriptor cfile;
-			cfile._file = file_duplicate(f_fd->_file);
+			struct file_with_descriptor *cfile = malloc(sizeof(struct file_with_descriptor));
+			cfile->_file = file_duplicate(f_fd->_file);
 			
-			if (cfile._file == NULL) {
+			if (cfile->_file == NULL) {
 				goto error;
 			}
 			
-			cfile.descriptor = f_fd->descriptor;
-			list_push_back(&current->file_descriptors, &cfile.elem);
+			cfile->descriptor = f_fd->descriptor;
+			list_push_back(&current->file_descriptors, &cfile->elem);
 		}
 	}
 
@@ -230,8 +231,11 @@ process_exec (void *f_name) {
 	/* We first kill the current context */
 	process_cleanup ();
 
+	lock_acquire(&access_filesys);
 	/* And then load the binary */
 	success = load (file_name, &_if);
+	
+	lock_release(&access_filesys);
 
 	/* To prepare process_cleanup, f_name is manually allocated (palloc)
 		in caller. We should free it to prevent memory leak.
