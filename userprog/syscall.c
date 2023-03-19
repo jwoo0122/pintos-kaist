@@ -60,7 +60,7 @@ static void halt(void) {
 	power_off();
 }
 
-static void exit(int status) {
+void exit(int status) {
 	struct thread *curr = thread_current();
 	curr->exit_code = status;
 	printf("%s: exit(%d)\n", curr->name, status); 
@@ -226,13 +226,18 @@ static bool remove (const char *file) {
 	return result;
 }
 
-static void close(int fd) {
+void close(int fd) {
 	struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
+	
+	lock_acquire(&access_filesys);
 	
 	if (f != NULL) {
 		list_remove(&f->elem);
-		free(f->_file);
+		file_close(f->_file);
+		free(f);
 	}
+	
+	lock_release(&access_filesys);
 }
 
 void

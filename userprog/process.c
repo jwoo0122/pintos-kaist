@@ -89,14 +89,23 @@ static struct fork_container {
 tid_t
 process_fork (const char *name, struct intr_frame *if_) {
 	/* Clone current thread to new thread.*/
-	struct fork_container f;
-	f.parent_if = if_;
-	f.t = thread_current();
+	struct fork_container *f = malloc(sizeof(struct fork_container));
+	f->parent_if = if_;
+	f->t = thread_current();
 	
-	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, &f);
+	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, f);
+	if (tid == TID_ERROR) {
+		return -1;
+	}
 	
 	/* Wait until child process do_fork complete */
-	sema_down(&f.t->fork_signal);
+	sema_down(&f->t->fork_signal);
+	free(f);
+	struct thread *forked_thread = thread_get_child_by_pid(tid);
+	
+	if (forked_thread->exit_code == -1) {
+		return -1;
+	}
 	
 	return tid;
 }
@@ -192,6 +201,10 @@ __do_fork (void *f) {
 			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
 			
 			struct file_with_descriptor *cfile = malloc(sizeof(struct file_with_descriptor));
+			if (cfile == NULL) {
+				goto error;
+			}
+
 			cfile->_file = file_duplicate(f_fd->_file);
 			
 			if (cfile->_file == NULL) {
@@ -210,7 +223,8 @@ __do_fork (void *f) {
 	if (succ)
 		do_iret (&if_);
 error:
-	thread_exit ();
+	sema_up(&parent->fork_signal);
+	exit(-1);
 }
 
 /* Switch the current execution context to the f_name.
@@ -291,11 +305,20 @@ process_wait (tid_t child_tid ) {
 void
 process_exit (void) {
 	struct thread *curr = thread_current ();
-	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
 	
+	if (!list_empty(&curr->file_descriptors)) {
+		struct list_elem *e = list_begin(&curr->file_descriptors);
+		
+		while (e != list_end(&curr->file_descriptors)) {
+			struct file_with_descriptor *f_fd = list_entry(e, struct file_with_descriptor, elem);
+			
+			list_remove(&f_fd->elem);
+			file_close(f_fd->_file);
+			e = list_next(e);
+			free(f_fd);
+		}
+	}
+
 	/* Signal to parent that child is trying to exit */
 	sema_up(&curr->exit_try_signal);
 	
