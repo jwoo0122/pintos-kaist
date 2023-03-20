@@ -170,7 +170,7 @@ __do_fork (void *f) {
 	if (current->file_self == NULL)
 		goto error;
 
-	file_deny_write(current->file_self)
+	file_deny_write(current->file_self);
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
@@ -319,6 +319,7 @@ process_exit (void) {
 	
 	if (curr->file_self != NULL) {
 		file_allow_write(curr->file_self);
+		file_close(curr->file_self);
 	}
 	
 	if (!list_empty(&curr->file_descriptors)) {
@@ -462,6 +463,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
+
 	process_activate (thread_current ());
 	
 	char parsed_file_name[128];
@@ -601,10 +603,16 @@ load (const char *file_name, struct intr_frame *if_) {
 	show_cnt += WORD;
 
 	success = true;
-
-	file_deny_write(file);
+	
+	/* Close current self file, same as exit */
+	if (t->file_self != NULL) {
+		file_allow_write(t->file_self);
+		file_close(t->file_self);
+	}
 
 	t->file_self = file;
+	file_deny_write(t->file_self);
+
 done:
 	/* We arrive here whether the load is successful or not. */
 	return success;
