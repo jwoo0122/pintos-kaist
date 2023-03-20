@@ -165,6 +165,13 @@ __do_fork (void *f) {
 	struct intr_frame *parent_if = _f->parent_if;
 	bool succ = true;
 
+	current->file_self = file_duplicate(parent->file_self);
+	
+	if (current->file_self == NULL)
+		goto error;
+
+	file_deny_write(current->file_self)
+
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
 	
@@ -206,6 +213,10 @@ __do_fork (void *f) {
 			}
 
 			cfile->_file = file_duplicate(f_fd->_file);
+			
+			if (f_fd->_file->deny_write) {
+				file_deny_write(cfile->_file);
+			}
 			
 			if (cfile->_file == NULL) {
 				goto error;
@@ -306,12 +317,20 @@ void
 process_exit (void) {
 	struct thread *curr = thread_current ();
 	
+	if (curr->file_self != NULL) {
+		file_allow_write(curr->file_self);
+	}
+	
 	if (!list_empty(&curr->file_descriptors)) {
 		struct list_elem *e = list_begin(&curr->file_descriptors);
 		
 		while (e != list_end(&curr->file_descriptors)) {
 			struct file_with_descriptor *f_fd = list_entry(e, struct file_with_descriptor, elem);
-			
+
+			if (f_fd->_file->deny_write) {
+				file_allow_write(f_fd->_file);
+			}
+
 			list_remove(&f_fd->elem);
 			file_close(f_fd->_file);
 			e = list_next(e);
@@ -583,9 +602,11 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	success = true;
 
+	file_deny_write(file);
+
+	t->file_self = file;
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
 	return success;
 }
 

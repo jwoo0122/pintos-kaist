@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "threads/interrupt.h"
 #include "threads/synch.h"
+#include "filesys/file.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -122,6 +123,8 @@ struct thread {
 	struct semaphore fork_signal;
 	
 	struct list file_descriptors;
+	
+	struct file *file_self;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

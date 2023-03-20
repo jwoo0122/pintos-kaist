@@ -537,6 +537,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->sleep_when = 0;
 	t->sleep_while = 0;
 	t->exit_code = 0;
+	t->file_self = NULL;
 	
 	list_init(&t->locks);
 	list_init(&t->locks_waiting);
