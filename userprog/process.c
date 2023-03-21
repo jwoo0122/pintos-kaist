@@ -165,6 +165,7 @@ __do_fork (void *f) {
 	struct intr_frame *parent_if = _f->parent_if;
 	bool succ = true;
 
+	lock_acquire(&access_filesys);
 	current->file_self = file_duplicate(parent->file_self);
 	
 	if (current->file_self == NULL)
@@ -192,13 +193,6 @@ __do_fork (void *f) {
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
 		goto error;
 #endif
-
-	/* TODO: Your code goes here.
-	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
-	 * TODO:       in include/filesys/file.h. Note that parent should not return
-	 * TODO:       from the fork() until this function successfully duplicates
-	 * TODO:       the resources of parent.*/
-
 	process_init ();
 	
 	if (!list_empty(&parent->file_descriptors)) {
@@ -207,25 +201,29 @@ __do_fork (void *f) {
 		for (f_fd_elem = list_begin(&parent->file_descriptors); f_fd_elem != list_end(&parent->file_descriptors); f_fd_elem = list_next(f_fd_elem)) {
 			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
 			
-			struct file_with_descriptor *cfile = malloc(sizeof(struct file_with_descriptor));
+			struct file_with_descriptor *cfile = (struct file_with_descriptor *)malloc(sizeof(struct file_with_descriptor));
+
 			if (cfile == NULL) {
 				goto error;
 			}
 
 			cfile->_file = file_duplicate(f_fd->_file);
 			
-			if (f_fd->_file->deny_write) {
-				file_deny_write(cfile->_file);
+			if (cfile->_file == NULL) {
+				free(cfile);
+				goto error;
 			}
 			
-			if (cfile->_file == NULL) {
-				goto error;
+			if (f_fd->_file->deny_write) {
+				file_deny_write(cfile->_file);
 			}
 			
 			cfile->descriptor = f_fd->descriptor;
 			list_push_back(&current->file_descriptors, &cfile->elem);
 		}
 	}
+	
+	lock_release(&access_filesys);
 
 	/* Signal to parent that fork is complete */
 	sema_up(&parent->fork_signal);
@@ -233,7 +231,9 @@ __do_fork (void *f) {
 	/* Finally, switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
+
 error:
+	lock_release(&access_filesys);
 	sema_up(&parent->fork_signal);
 	exit(-1);
 }
@@ -336,6 +336,18 @@ process_exit (void) {
 			file_close(f_fd->_file);
 			e = list_next(e);
 			free(f_fd);
+		}
+	}
+	
+	struct list_elem *lock_e;
+
+	if (!list_empty(&curr->locks)) {
+		lock_e = list_begin(&curr->locks);
+		
+		while (lock_e != list_end(&curr->locks)) {
+			struct lock *_lock = list_entry(lock_e, struct lock, elem);
+			
+			lock_release(_lock);
 		}
 	}
 
