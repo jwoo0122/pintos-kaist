@@ -5,6 +5,8 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
+#include "filesys/file.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -110,6 +112,19 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 	struct list_elem core_elem;
+	
+	struct list childs;
+	struct list_elem child_elem;
+	
+	struct semaphore exit_try_signal;
+	struct semaphore exit_catch_signal;
+	int exit_code;
+	
+	struct semaphore fork_signal;
+	
+	struct list file_descriptors;
+	
+	struct file *file_self;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -152,10 +167,14 @@ void thread_yield (void);
 int thread_get_priority (void);
 void thread_set_priority (int);
 
+struct thread* thread_get_child_by_pid(tid_t);
+
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+int thread_get_min_fd (void);
 
 void do_iret (struct intr_frame *tf);
 

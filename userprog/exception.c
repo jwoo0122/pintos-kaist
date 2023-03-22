@@ -1,4 +1,5 @@
 #include "userprog/exception.h"
+#include "userprog/syscall.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include "userprog/gdt.h"
@@ -85,8 +86,7 @@ kill (struct intr_frame *f) {
 			   expected.  Kill the user process.  */
 			printf ("%s: dying due to interrupt %#04llx (%s).\n",
 					thread_name (), f->vec_no, intr_name (f->vec_no));
-			intr_dump_frame (f);
-			thread_exit ();
+			exit(-1);
 
 		case SEL_KCSEG:
 			/* Kernel's code segment, which indicates a kernel bug.

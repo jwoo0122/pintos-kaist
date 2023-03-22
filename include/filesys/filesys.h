@@ -2,11 +2,18 @@
 #define FILESYS_FILESYS_H
 
 #include <stdbool.h>
+#include <list.h>
 #include "filesys/off_t.h"
 
 /* Sectors of system file inodes. */
 #define FREE_MAP_SECTOR 0       /* Free map file inode sector. */
 #define ROOT_DIR_SECTOR 1       /* Root directory file inode sector. */
+
+struct file_with_descriptor {
+  int descriptor;
+  struct file *_file;
+  struct list_elem elem;
+};
 
 /* Disk used for file system. */
 extern struct disk *filesys_disk;

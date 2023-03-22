@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -51,9 +52,15 @@ process_create_initd (const char *file_name) {
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
+	
+	char parsed_file_name[128];
+	char *token_save_point, *arg;
+	
+	memcpy(parsed_file_name, fn_copy, strlen(fn_copy) + 1);
+	arg = strtok_r(parsed_file_name, " ", &token_save_point);
 
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	tid = thread_create (arg, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
@@ -73,13 +80,34 @@ initd (void *f_name) {
 	NOT_REACHED ();
 }
 
+static struct fork_container {
+	struct thread *t;
+	struct intr_frame *parent_if;
+};
 /* Clones the current process as `name`. Returns the new process's thread id, or
  * TID_ERROR if the thread cannot be created. */
 tid_t
-process_fork (const char *name, struct intr_frame *if_ UNUSED) {
+process_fork (const char *name, struct intr_frame *if_) {
 	/* Clone current thread to new thread.*/
-	return thread_create (name,
-			PRI_DEFAULT, __do_fork, thread_current ());
+	struct fork_container *f = malloc(sizeof(struct fork_container));
+	f->parent_if = if_;
+	f->t = thread_current();
+	
+	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, f);
+	if (tid == TID_ERROR) {
+		return -1;
+	}
+	
+	/* Wait until child process do_fork complete */
+	sema_down(&f->t->fork_signal);
+	free(f);
+	struct thread *forked_thread = thread_get_child_by_pid(tid);
+	
+	if (forked_thread->exit_code == -1) {
+		return -1;
+	}
+	
+	return tid;
 }
 
 #ifndef VM
@@ -93,21 +121,31 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	void *newpage;
 	bool writable;
 
-	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
+	/* 1. TODO: If the va is kernel page, then return immediately. */
+	if (is_kernel_vaddr(va)) {
+		return true;
+	}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
+	newpage = palloc_get_page(PAL_USER);
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
+	memcpy(newpage, parent_page, PGSIZE);
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
+	
+	/* Check whether parent page table entry is writable */
+	writable = is_writable(pte);
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
+		// FIXME: do error handling what?
+		return false;
 		/* 6. TODO: if fail to insert page, do error handling. */
 	}
 	return true;
@@ -119,16 +157,27 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  *       That is, you are required to pass second argument of process_fork to
  *       this function. */
 static void
-__do_fork (void *aux) {
+__do_fork (void *f) {
+	struct fork_container *_f = f;
 	struct intr_frame if_;
-	struct thread *parent = (struct thread *) aux;
+	struct thread *parent = (struct thread *) _f->t;
 	struct thread *current = thread_current ();
-	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
-	struct intr_frame *parent_if;
+	struct intr_frame *parent_if = _f->parent_if;
 	bool succ = true;
+
+	lock_acquire(&access_filesys);
+	current->file_self = file_duplicate(parent->file_self);
+	
+	if (current->file_self == NULL)
+		goto error;
+
+	file_deny_write(current->file_self);
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	
+	/* fork should return 0 in child process */
+	if_.R.rax = 0;
 
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
@@ -144,20 +193,49 @@ __do_fork (void *aux) {
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
 		goto error;
 #endif
-
-	/* TODO: Your code goes here.
-	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
-	 * TODO:       in include/filesys/file.h. Note that parent should not return
-	 * TODO:       from the fork() until this function successfully duplicates
-	 * TODO:       the resources of parent.*/
-
 	process_init ();
+	
+	if (!list_empty(&parent->file_descriptors)) {
+		struct list_elem *f_fd_elem;
+		
+		for (f_fd_elem = list_begin(&parent->file_descriptors); f_fd_elem != list_end(&parent->file_descriptors); f_fd_elem = list_next(f_fd_elem)) {
+			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
+			
+			struct file_with_descriptor *cfile = (struct file_with_descriptor *)malloc(sizeof(struct file_with_descriptor));
+
+			if (cfile == NULL) {
+				goto error;
+			}
+
+			cfile->_file = file_duplicate(f_fd->_file);
+			
+			if (cfile->_file == NULL) {
+				free(cfile);
+				goto error;
+			}
+			
+			if (f_fd->_file->deny_write) {
+				file_deny_write(cfile->_file);
+			}
+			
+			cfile->descriptor = f_fd->descriptor;
+			list_push_back(&current->file_descriptors, &cfile->elem);
+		}
+	}
+	
+	lock_release(&access_filesys);
+
+	/* Signal to parent that fork is complete */
+	sema_up(&parent->fork_signal);
 
 	/* Finally, switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
+
 error:
-	thread_exit ();
+	lock_release(&access_filesys);
+	sema_up(&parent->fork_signal);
+	exit(-1);
 }
 
 /* Switch the current execution context to the f_name.
@@ -178,11 +256,18 @@ process_exec (void *f_name) {
 	/* We first kill the current context */
 	process_cleanup ();
 
+	lock_acquire(&access_filesys);
 	/* And then load the binary */
 	success = load (file_name, &_if);
+	
+	lock_release(&access_filesys);
+
+	/* To prepare process_cleanup, f_name is manually allocated (palloc)
+		in caller. We should free it to prevent memory leak.
+	*/
+	palloc_free_page (file_name);
 
 	/* If load failed, quit. */
-	palloc_free_page (file_name);
 	if (!success)
 		return -1;
 
@@ -202,23 +287,77 @@ process_exec (void *f_name) {
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) {
-	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
-	 * XXX:       to add infinite loop here before
-	 * XXX:       implementing the process_wait. */
-	for (;;) {}
-	return -1;
+process_wait (tid_t child_tid ) {
+	struct thread *curr = thread_current();
+	
+	// 1. Find child thread from tid
+	struct thread *child = thread_get_child_by_pid(child_tid);
+
+	if (child == NULL) {
+		// Something went wrong. Maybe child is destroyed by kernel.
+		return -1;
+	}
+	
+	// 2. Wait it signal exit try
+	sema_down(&child->exit_try_signal);
+	
+	// 3. Child tried to exit. Let it do that.
+	// Should retrieve exit code after wait try signal. Cause
+	// exit code is set when try signal is triggered.
+	int exit_code = child->exit_code;
+	// Remove child from my child list
+	list_remove(&child->child_elem);
+	sema_up(&child->exit_catch_signal);
+	
+	return exit_code;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
 	struct thread *curr = thread_current ();
-	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
+	
+	if (curr->file_self != NULL) {
+		file_allow_write(curr->file_self);
+		file_close(curr->file_self);
+	}
+	
+	if (!list_empty(&curr->file_descriptors)) {
+		struct list_elem *e = list_begin(&curr->file_descriptors);
+		
+		while (e != list_end(&curr->file_descriptors)) {
+			struct file_with_descriptor *f_fd = list_entry(e, struct file_with_descriptor, elem);
 
+			if (f_fd->_file->deny_write) {
+				file_allow_write(f_fd->_file);
+			}
+
+			list_remove(&f_fd->elem);
+			file_close(f_fd->_file);
+			e = list_next(e);
+			free(f_fd);
+		}
+	}
+	
+	struct list_elem *lock_e;
+
+	if (!list_empty(&curr->locks)) {
+		lock_e = list_begin(&curr->locks);
+		
+		while (lock_e != list_end(&curr->locks)) {
+			struct lock *_lock = list_entry(lock_e, struct lock, elem);
+			
+			lock_release(_lock);
+		}
+	}
+
+	/* Signal to parent that child is trying to exit */
+	sema_up(&curr->exit_try_signal);
+	
+	/* Wait for parent to accept my exit */
+	sema_down(&curr->exit_catch_signal);
+
+	/* Parent received my status. Now I can exit my self. */
 	process_cleanup ();
 }
 
@@ -336,6 +475,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
+
 	process_activate (thread_current ());
 	
 	char parsed_file_name[128];
@@ -347,7 +487,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	/* Open executable file. */
 	file = filesys_open (arg);
 	if (file == NULL) {
-		printf ("load: %s: open failed\n", file_name);
+		printf ("load: %s: open failed\n", arg);
 		goto done;
 	}
 
@@ -359,7 +499,7 @@ load (const char *file_name, struct intr_frame *if_) {
 			|| ehdr.e_version != 1
 			|| ehdr.e_phentsize != sizeof (struct Phdr)
 			|| ehdr.e_phnum > 1024) {
-		printf ("load: %s: error loading executable\n", file_name);
+		printf ("load: %s: error loading executable\n", arg);
 		goto done;
 	}
 
@@ -453,28 +593,40 @@ load (const char *file_name, struct intr_frame *if_) {
 	int argc = address_cnt;
 	
 	/* Add argv address to stack */
+	/* First, add 0 word space */
+	if_->rsp -= WORD;
+	memset(if_->rsp, 0, WORD);
+	address_cnt--;
+	show_cnt += WORD;
+	
 	while (address_cnt >= 0) {
 		if_->rsp -= WORD;
-		printf("rsp: %p\n", if_->rsp);
 		memcpy(if_->rsp, &(arg_address[address_cnt]), WORD);
 		address_cnt--;
 		show_cnt += WORD;
 	}
 
 	if_->R.rdi = argc;
-	if_->R.rsi = arg_address[0];
+	if_->R.rsi = if_->rsp;
 	
+	/* Add Return address */
 	if_->rsp -= WORD;
 	memset(if_->rsp, 0, sizeof(void *));
 	show_cnt += WORD;
 
-	hex_dump(if_->rsp, if_->rsp, show_cnt, true);
-
 	success = true;
+	
+	/* Close current self file, same as exit */
+	if (t->file_self != NULL) {
+		file_allow_write(t->file_self);
+		file_close(t->file_self);
+	}
+
+	t->file_self = file;
+	file_deny_write(t->file_self);
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
 	return success;
 }
 

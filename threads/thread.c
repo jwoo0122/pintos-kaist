@@ -11,6 +11,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "filesys/filesys.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -199,6 +200,14 @@ thread_create (const char *name, int priority,
 	/* Initialize thread. */
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
+	
+	/* Point parent */
+	/* Why this should not be in init_thread?
+		Cause init_thread is used wihtout thread_create,
+		which is the case when create main thread.
+		main thread has no parent.
+	*/
+	list_push_back(&thread_current()->childs, &t->child_elem);
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -352,6 +361,25 @@ thread_get_priority (void) {
 	return thread_current ()->priority;
 }
 
+/* Get child thread elem from tid(pid) */
+struct thread *
+thread_get_child_by_pid(tid_t pid) {
+	struct thread *curr = thread_current();
+	struct list_elem *e;
+	
+	if (!list_empty(&curr->childs)) {
+		for (e = list_begin(&curr->childs); e != list_end(&curr->childs); e = list_next(e)) {
+			struct thread *child = list_entry(e, struct thread, child_elem);
+			
+			if (child->tid == pid) {
+				return child;
+			}
+		}
+	}
+	
+	return NULL;
+}
+
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice) {
@@ -389,6 +417,41 @@ thread_priority_compare(const struct list_elem *a, const struct list_elem *b, vo
 	struct thread *b_thread = list_entry(b, struct thread, elem);
 	
 	return a_thread->priority > b_thread->priority;
+}
+
+static bool
+thread_file_descriptors_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+	struct file_with_descriptor *f_fd_a = list_entry(a, struct file_with_descriptor, elem);
+	struct file_with_descriptor *f_fd_b = list_entry(b, struct file_with_descriptor, elem);
+	
+	return f_fd_a < f_fd_b;
+}
+
+int
+thread_get_min_fd(void) {
+	struct thread *curr = thread_current();
+	
+	/* 0 = stdin, 1 = stdout, 2 = stderr */
+	int min_fd = 3;
+	struct list_elem *f_fd_elem;
+	
+	list_sort(&curr->file_descriptors, thread_file_descriptors_compare, NULL);
+	
+	if (!list_empty(&curr->file_descriptors)) {
+		for (f_fd_elem = list_begin(&curr->file_descriptors); f_fd_elem != list_end(&curr->file_descriptors); f_fd_elem = list_next(f_fd_elem)) {
+			struct file_with_descriptor *f_fd = list_entry(f_fd_elem, struct file_with_descriptor, elem);
+			
+			if (f_fd->descriptor > min_fd) {
+				return min_fd;
+			}
+			
+			if (f_fd->descriptor == min_fd) {
+				min_fd++;
+			}
+		}
+	}
+	
+	return min_fd;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -477,8 +540,16 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->magic = THREAD_MAGIC;
 	t->sleep_when = 0;
 	t->sleep_while = 0;
+	t->exit_code = 0;
+	t->file_self = NULL;
+	
 	list_init(&t->locks);
 	list_init(&t->locks_waiting);
+	list_init(&t->childs);
+	list_init(&t->file_descriptors);
+	sema_init(&t->exit_try_signal, 0);
+	sema_init(&t->exit_catch_signal, 0);
+	sema_init(&t->fork_signal, 0);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
