@@ -332,9 +332,9 @@ process_exit (void) {
 				file_allow_write(f_fd->_file);
 			}
 
-			list_remove(&f_fd->elem);
+			struct list_elem *e_temp = list_remove(&f_fd->elem);
 			file_close(f_fd->_file);
-			e = list_next(e);
+			e = e_temp;
 			free(f_fd);
 		}
 	}
