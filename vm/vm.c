@@ -139,6 +139,8 @@ vm_get_frame (void) {
 		}
 		
 		frame = evicted_frame;
+	} else {
+		frame->kva = candidate_virtual_address;
 	}
 	
 	// FIXME: is it correct to doing like this?
