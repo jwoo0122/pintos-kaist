@@ -4,12 +4,15 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 
+static struct list frame_table;
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
 vm_init (void) {
 	vm_anon_init ();
 	vm_file_init ();
+	list_init(&frame_table);
 #ifdef EFILESYS  /* For project 4 */
 	pagecache_init ();
 #endif
@@ -63,10 +66,19 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
-	/* TODO: Fill this function. */
+	if (!list_empty(&spt->sptable_list)) {
+		struct list_elem *e;
+		
+		for (e = list_front(&spt->sptable_list); e != list_end(&spt->sptable_list); e = list_next(e)) {
+			struct page *_page = list_entry(e, struct page, spt_elem);
+			
+			if (_page->va == va) {
+				return _page;
+			}
+		}
+	}
 
-	return page;
+	return NULL;
 }
 
 /* Insert PAGE into spt with validation. */
@@ -74,9 +86,7 @@ bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
-	/* TODO: Fill this function. */
-
-	return succ;
+	list_push_back(&spt->sptable_list, &page->spt_elem);
 }
 
 void
@@ -91,6 +101,10 @@ vm_get_victim (void) {
 	struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
 
+	 // FIXME: get victim, maybe we need frame priority... For now just pop from table
+	struct list_elem *e = list_pop_front(&frame_table);
+	victim = list_entry(e, struct frame, frt_elem);
+
 	return victim;
 }
 
@@ -100,7 +114,8 @@ static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
-
+	// NOTE: swap in-out is extra subject
+	swap_out(victim->page);
 	return NULL;
 }
 
@@ -110,8 +125,25 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
+	struct frame *frame = malloc(sizeof(struct frame));
 	/* TODO: Fill this function. */
+	
+	void* candidate_virtual_address = palloc_get_page(PAL_USER);
+	
+	if (candidate_virtual_address == NULL) {
+		// USER POOL IS FULL
+		struct frame *evicted_frame = vm_evict_frame();
+		
+		if (evicted_frame == NULL) {
+			// FIXME: Error handling
+		}
+		
+		frame = evicted_frame;
+	}
+	
+	// FIXME: is it correct to doing like this?
+	list_push_back(&frame_table, &frame->frt_elem);
+	frame->page = NULL;
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -151,9 +183,12 @@ vm_dealloc_page (struct page *page) {
 /* Claim the page that allocate on VA. */
 bool
 vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
-	/* TODO: Fill this function */
-
+	struct thread *t = thread_current();
+	struct page *page = spt_find_page(&t->spt, va);
+	
+	if (page == NULL)
+		return 0;
+	
 	return vm_do_claim_page (page);
 }
 
@@ -167,6 +202,18 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	struct thread *t = thread_current ();
+
+	/* Verify that there's not already a page at that virtual
+	 * address, then map our page there. */
+	
+	// FIXME: use appropriate write flag
+	bool result = (pml4_get_page (t->pml4, page->va) == NULL
+			&& pml4_set_page (t->pml4, page->va, frame->kva, 0));
+
+	if (!result) {
+		return 0;
+	}
 
 	return swap_in (page, frame->kva);
 }
@@ -174,6 +221,7 @@ vm_do_claim_page (struct page *page) {
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	list_init(&spt->sptable_list);
 }
 
 /* Copy supplemental page table from src to dst */
