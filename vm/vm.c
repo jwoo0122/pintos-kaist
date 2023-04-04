@@ -12,13 +12,13 @@ void
 vm_init (void) {
 	vm_anon_init ();
 	vm_file_init ();
-	list_init(&frame_table);
 #ifdef EFILESYS  /* For project 4 */
 	pagecache_init ();
 #endif
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_table);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -53,7 +53,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
-		struct page *spt_page_for_user_process;
+		struct page *spt_page_for_user_process = malloc(sizeof(struct page));
 		
 		switch (VM_TYPE(type)) {
 			case VM_ANON:
@@ -67,6 +67,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
+		spt_page_for_user_process->is_writable = writable;
 		list_push_back(spt, &spt_page_for_user_process->spt_elem);
 		return true;
 	}
@@ -219,10 +220,8 @@ vm_do_claim_page (struct page *page) {
 
 	/* Verify that there's not already a page at that virtual
 	 * address, then map our page there. */
-	
-	// FIXME: use appropriate write flag
 	bool result = (pml4_get_page (t->pml4, page->va) == NULL
-			&& pml4_set_page (t->pml4, page->va, frame->kva, 0));
+			&& pml4_set_page (t->pml4, page->va, frame->kva, page->is_writable));
 
 	if (!result) {
 		return 0;

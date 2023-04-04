@@ -48,6 +48,7 @@ struct page {
 
 	/* Your implementation */
 	
+	bool is_writable;
 	struct list_elem spt_elem;
 
 	/* Per-type data are binded into the union.
