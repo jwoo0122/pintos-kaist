@@ -53,11 +53,22 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
+		struct page *spt_page_for_user_process;
+		
+		switch (VM_TYPE(type)) {
+			case VM_ANON:
+				uninit_new(spt_page_for_user_process, upage, init, type, aux, file_backed_initializer);
+				break;
+			case VM_FILE:
+				uninit_new(spt_page_for_user_process, upage, init, type, aux, anon_initializer);
+				break;
+		}
+
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
-
-		/* TODO: Insert the page into the spt. */
+		list_push_back(spt, &spt_page_for_user_process->spt_elem);
+		return true;
 	}
 err:
 	return false;
