@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "threads/vaddr.h"
 
 static struct list frame_table;
 
@@ -57,10 +58,10 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		
 		switch (VM_TYPE(type)) {
 			case VM_ANON:
-				uninit_new(spt_page_for_user_process, upage, init, type, aux, file_backed_initializer);
+				uninit_new(spt_page_for_user_process, upage, init, type, aux, anon_initializer);
 				break;
 			case VM_FILE:
-				uninit_new(spt_page_for_user_process, upage, init, type, aux, anon_initializer);
+				uninit_new(spt_page_for_user_process, upage, init, type, aux, file_backed_initializer);
 				break;
 		}
 
@@ -68,8 +69,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
 		spt_page_for_user_process->is_writable = writable;
-		list_push_back(spt, &spt_page_for_user_process->spt_elem);
-		return true;
+		return spt_insert_page(spt, spt_page_for_user_process);
 	}
 err:
 	return false;
@@ -84,7 +84,9 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 		for (e = list_front(&spt->sptable_list); e != list_end(&spt->sptable_list); e = list_next(e)) {
 			struct page *_page = list_entry(e, struct page, spt_elem);
 			
-			if (_page->va == va) {
+			printf("_page->va: %p, va: %p\n", _page->va, va);
+			
+			if (_page->va == pg_round_down(va)) {
 				return _page;
 			}
 		}
@@ -97,8 +99,8 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
-	int succ = false;
 	list_push_back(&spt->sptable_list, &page->spt_elem);
+	return true;
 }
 
 void
@@ -126,7 +128,6 @@ static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
-	// NOTE: swap in-out is extra subject
 	swap_out(victim->page);
 	return NULL;
 }
@@ -182,8 +183,21 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	
+	if (is_kernel_vaddr(addr)) {
+		return false;
+	}
+	
+	if (not_present) {
+		printf("try to handle not present\n");
+		
+		if (!vm_claim_page(addr)) {
+			printf("[2]\n");
+			return false;
+		}
 
-	return vm_do_claim_page (page);
+		return true;
+	}
 }
 
 /* Free the page.
@@ -198,10 +212,13 @@ vm_dealloc_page (struct page *page) {
 bool
 vm_claim_page (void *va UNUSED) {
 	struct thread *t = thread_current();
+	printf("claim page\n");
 	struct page *page = spt_find_page(&t->spt, va);
 	
-	if (page == NULL)
+	if (page == NULL) {
+		printf("[2-1]");
 		return 0;
+	}
 	
 	return vm_do_claim_page (page);
 }
@@ -220,8 +237,7 @@ vm_do_claim_page (struct page *page) {
 
 	/* Verify that there's not already a page at that virtual
 	 * address, then map our page there. */
-	bool result = (pml4_get_page (t->pml4, page->va) == NULL
-			&& pml4_set_page (t->pml4, page->va, frame->kva, page->is_writable));
+	bool result = (pml4_get_page (t->pml4, page->va) == NULL && pml4_set_page (t->pml4, page->va, frame->kva, page->is_writable));
 
 	if (!result) {
 		return 0;

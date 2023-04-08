@@ -779,6 +779,12 @@ install_page (void *upage, void *kpage, bool writable) {
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
+struct args_for_lazy_load_segment {
+	struct file *file;
+	size_t page_read_bytes;
+	off_t ofs;
+};
+
 static bool
 lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
@@ -804,7 +810,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	memset(page->frame->kva + _aux->page_read_bytes, 0, page_zero_bytes);
 	
 	// Why don't we need installing the page? cause it is already installed by swap in.
-	// More precisely, vm_claim_page.
+	// More precisely, vm_claim_page from vm_try_handle_fault called by page_fault exception handler.
 	
 	free(_aux);
 	
@@ -826,12 +832,6 @@ lazy_load_segment (struct page *page, void *aux) {
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
 
-static struct args_for_lazy_load_segment {
-	struct file *file;
-	size_t page_read_bytes;
-	off_t ofs;
-}
-
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
@@ -848,9 +848,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
 		struct args_for_lazy_load_segment *aux = malloc(sizeof(struct args_for_lazy_load_segment));
-		args_for_lazy_load_segment->file = file;
-		args_for_lazy_load_segment->page_read_bytes = page_read_bytes;
-		args_for_lazy_load_segment->ofs = ofs;
+		aux->file = file;
+		aux->page_read_bytes = page_read_bytes;
+		aux->ofs = ofs;
 
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage, writable, lazy_load_segment, aux)) {
 			free(aux);
@@ -870,6 +870,16 @@ static bool
 setup_stack (struct intr_frame *if_) {
 	bool success = false;
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
+	
+	// bool stack_address_installed = vm_alloc_page(VM_ANON, stack_bottom, true);
+	
+	// if (stack_address_installed) {
+	// 	success = vm_claim_page(stack_bottom);
+		
+	// 	if (success) {
+	// 		if_->rsp = USER_STACK;
+	// 	}
+	// }
 
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
 	 * TODO: If success, set the rsp accordingly.
