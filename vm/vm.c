@@ -84,8 +84,6 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 		for (e = list_front(&spt->sptable_list); e != list_end(&spt->sptable_list); e = list_next(e)) {
 			struct page *_page = list_entry(e, struct page, spt_elem);
 			
-			printf("_page->va: %p, va: %p\n", _page->va, va);
-			
 			if (_page->va == pg_round_down(va)) {
 				return _page;
 			}
@@ -145,13 +143,7 @@ vm_get_frame (void) {
 	
 	if (candidate_virtual_address == NULL) {
 		// USER POOL IS FULL
-		struct frame *evicted_frame = vm_evict_frame();
-		
-		if (evicted_frame == NULL) {
-			// FIXME: Error handling
-		}
-		
-		frame = evicted_frame;
+		frame = vm_evict_frame(); // evict always success
 	} else {
 		frame->kva = candidate_virtual_address;
 	}
@@ -180,7 +172,6 @@ bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 	
@@ -189,10 +180,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	}
 	
 	if (not_present) {
-		printf("try to handle not present\n");
-		
 		if (!vm_claim_page(addr)) {
-			printf("[2]\n");
 			return false;
 		}
 
@@ -212,11 +200,9 @@ vm_dealloc_page (struct page *page) {
 bool
 vm_claim_page (void *va UNUSED) {
 	struct thread *t = thread_current();
-	printf("claim page\n");
 	struct page *page = spt_find_page(&t->spt, va);
 	
 	if (page == NULL) {
-		printf("[2-1]");
 		return 0;
 	}
 	
@@ -237,7 +223,7 @@ vm_do_claim_page (struct page *page) {
 
 	/* Verify that there's not already a page at that virtual
 	 * address, then map our page there. */
-	bool result = (pml4_get_page (t->pml4, page->va) == NULL && pml4_set_page (t->pml4, page->va, frame->kva, page->is_writable));
+	bool result = ((pml4_get_page (t->pml4, page->va) == NULL) && pml4_set_page (t->pml4, page->va, frame->kva, page->is_writable));
 
 	if (!result) {
 		return 0;

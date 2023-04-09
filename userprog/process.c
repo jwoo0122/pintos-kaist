@@ -812,6 +812,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	// Why don't we need installing the page? cause it is already installed by swap in.
 	// More precisely, vm_claim_page from vm_try_handle_fault called by page_fault exception handler.
 	
+	file_seek(_aux->file, _aux->ofs);
 	free(_aux);
 	
 	return true;
@@ -839,6 +840,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	ASSERT (pg_ofs (upage) == 0);
 	ASSERT (ofs % PGSIZE == 0);
 
+	file_seek(file, ofs);
 	while (read_bytes > 0 || zero_bytes > 0) {
 		/* Do calculate how to fill this page.
 		 * We will read PAGE_READ_BYTES bytes from FILE
@@ -861,6 +863,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes;
 	}
 	return true;
 }
@@ -871,15 +874,17 @@ setup_stack (struct intr_frame *if_) {
 	bool success = false;
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 	
-	// bool stack_address_installed = vm_alloc_page(VM_ANON, stack_bottom, true);
+	bool stack_address_installed = vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true);
 	
-	// if (stack_address_installed) {
-	// 	success = vm_claim_page(stack_bottom);
+	if (stack_address_installed) {
+		// No need to lazily loading, claim it directely after retreived stack page.
+		success = vm_claim_page(stack_bottom);
 		
-	// 	if (success) {
-	// 		if_->rsp = USER_STACK;
-	// 	}
-	// }
+		if (success) {
+			// Pointing out stack pointer
+			if_->rsp = USER_STACK;
+		}
+	}
 
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
 	 * TODO: If success, set the rsp accordingly.
