@@ -240,13 +240,68 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 
 /* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct supplemental_page_table *src UNUSED) {
+	// NOTE: current thread is child, containing dst table. src is from parent interrupt frame.
+	
+	if (!list_empty(&src->sptable_list)) {
+		struct list_elem *e;
+		
+		for (e = list_front(&src->sptable_list); e != list_end(&src->sptable_list); e = list_next(e))  {
+			struct page *src_p = list_entry(e, struct page, spt_elem);
+			
+			// Copy
+			void* upage = src_p->va;
+			bool writable = src_p->is_writable;
+			
+			// Candidate type, also if uninit (anon, file_backed...)
+			enum vm_type src_p_type = page_get_type(src_p);
+			
+			// if page is uninit
+			vm_initializer *init = src_p->uninit.init;
+			void *aux = src_p->uninit.aux;
+
+			if (src_p->operations->type == VM_UNINIT) {
+				// Uninitialized pages
+				bool alloc_with_init_result = vm_alloc_page_with_initializer(src_p_type, upage, writable, init, aux);
+				
+				if (!alloc_with_init_result)
+					return false;
+			} else {
+				// Already initialized pages, no need to use init
+				bool alloc_result = vm_alloc_page(src_p_type, upage, writable);
+
+				if (!alloc_result)
+					return false;
+
+				// Claim the page, cause they're already claimed. (Not uninit)
+				bool claim_result = vm_claim_page(upage);
+
+				if (!claim_result)
+					return false;
+
+				// Cause we already allocated the page, upage must be in dst.
+				struct page *dst_p = spt_find_page(dst, upage);
+				memcpy(dst_p->frame->kva, src_p->frame->kva, PGSIZE);
+			}
+		}
+	}
+
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
-	/* TODO: Destroy all the supplemental_page_table hold by thread and
-	 * TODO: writeback all the modified contents to the storage. */
+	if (!list_empty(&spt->sptable_list)) {
+		struct list_elem *e;
+
+		for (e = list_front(&spt->sptable_list); e != list_end(&spt->sptable_list); e = list_next(e)) {
+			struct page *_page = list_entry(e, struct page, spt_elem);
+
+			destroy(_page);
+
+			// page is malloced, so you must free it.
+			free(_page);
+		}
+	}
 }
