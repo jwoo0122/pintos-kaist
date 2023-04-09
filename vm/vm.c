@@ -250,7 +250,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct
 			struct page *src_p = list_entry(e, struct page, spt_elem);
 			
 			// Copy
-			void* upage = src_p->va;
+			void* src_upage = src_p->va;
 			bool writable = src_p->is_writable;
 			
 			// Candidate type, also if uninit (anon, file_backed...)
@@ -262,25 +262,25 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct
 
 			if (src_p->operations->type == VM_UNINIT) {
 				// Uninitialized pages
-				bool alloc_with_init_result = vm_alloc_page_with_initializer(src_p_type, upage, writable, init, aux);
+				bool alloc_with_init_result = vm_alloc_page_with_initializer(src_p_type, src_upage, writable, init, aux);
 				
 				if (!alloc_with_init_result)
 					return false;
 			} else {
 				// Already initialized pages, no need to use init
-				bool alloc_result = vm_alloc_page(src_p_type, upage, writable);
+				bool alloc_result = vm_alloc_page(src_p_type, src_upage, writable);
 
 				if (!alloc_result)
 					return false;
 
 				// Claim the page, cause they're already claimed. (Not uninit)
-				bool claim_result = vm_claim_page(upage);
+				bool claim_result = vm_claim_page(src_upage);
 
 				if (!claim_result)
 					return false;
 
-				// Cause we already allocated the page, upage must be in dst.
-				struct page *dst_p = spt_find_page(dst, upage);
+				// Cause we already allocated the page, src_upage must be in dst.
+				struct page *dst_p = spt_find_page(dst, src_upage);
 				memcpy(dst_p->frame->kva, src_p->frame->kva, PGSIZE);
 			}
 		}
@@ -293,14 +293,15 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	if (!list_empty(&spt->sptable_list)) {
-		struct list_elem *e;
+		struct list_elem *e = list_front(&spt->sptable_list);
 
-		for (e = list_front(&spt->sptable_list); e != list_end(&spt->sptable_list); e = list_next(e)) {
+		while (e != list_end(&spt->sptable_list)) {
 			struct page *_page = list_entry(e, struct page, spt_elem);
+			
+			ASSERT(_page != NULL);
 
+			e = list_remove(&_page->spt_elem);
 			destroy(_page);
-
-			// page is malloced, so you must free it.
 			free(_page);
 		}
 	}
