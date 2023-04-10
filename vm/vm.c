@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "threads/vaddr.h"
 
 static struct list frame_table;
 
@@ -12,13 +13,13 @@ void
 vm_init (void) {
 	vm_anon_init ();
 	vm_file_init ();
-	list_init(&frame_table);
 #ifdef EFILESYS  /* For project 4 */
 	pagecache_init ();
 #endif
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_table);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -53,11 +54,22 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
+		struct page *spt_page_for_user_process = malloc(sizeof(struct page));
+		
+		switch (VM_TYPE(type)) {
+			case VM_ANON:
+				uninit_new(spt_page_for_user_process, upage, init, type, aux, anon_initializer);
+				break;
+			case VM_FILE:
+				uninit_new(spt_page_for_user_process, upage, init, type, aux, file_backed_initializer);
+				break;
+		}
+
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
-
-		/* TODO: Insert the page into the spt. */
+		spt_page_for_user_process->is_writable = writable;
+		return spt_insert_page(spt, spt_page_for_user_process);
 	}
 err:
 	return false;
@@ -72,7 +84,7 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 		for (e = list_front(&spt->sptable_list); e != list_end(&spt->sptable_list); e = list_next(e)) {
 			struct page *_page = list_entry(e, struct page, spt_elem);
 			
-			if (_page->va == va) {
+			if (_page->va == pg_round_down(va)) {
 				return _page;
 			}
 		}
@@ -85,8 +97,8 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
-	int succ = false;
 	list_push_back(&spt->sptable_list, &page->spt_elem);
+	return true;
 }
 
 void
@@ -114,7 +126,6 @@ static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
-	// NOTE: swap in-out is extra subject
 	swap_out(victim->page);
 	return NULL;
 }
@@ -132,13 +143,7 @@ vm_get_frame (void) {
 	
 	if (candidate_virtual_address == NULL) {
 		// USER POOL IS FULL
-		struct frame *evicted_frame = vm_evict_frame();
-		
-		if (evicted_frame == NULL) {
-			// FIXME: Error handling
-		}
-		
-		frame = evicted_frame;
+		frame = vm_evict_frame(); // evict always success
 	} else {
 		frame->kva = candidate_virtual_address;
 	}
@@ -167,11 +172,20 @@ bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	
+	if (is_kernel_vaddr(addr)) {
+		return false;
+	}
+	
+	if (not_present) {
+		if (!vm_claim_page(addr)) {
+			return false;
+		}
 
-	return vm_do_claim_page (page);
+		return true;
+	}
 }
 
 /* Free the page.
@@ -188,8 +202,9 @@ vm_claim_page (void *va UNUSED) {
 	struct thread *t = thread_current();
 	struct page *page = spt_find_page(&t->spt, va);
 	
-	if (page == NULL)
+	if (page == NULL) {
 		return 0;
+	}
 	
 	return vm_do_claim_page (page);
 }
@@ -208,10 +223,7 @@ vm_do_claim_page (struct page *page) {
 
 	/* Verify that there's not already a page at that virtual
 	 * address, then map our page there. */
-	
-	// FIXME: use appropriate write flag
-	bool result = (pml4_get_page (t->pml4, page->va) == NULL
-			&& pml4_set_page (t->pml4, page->va, frame->kva, 0));
+	bool result = ((pml4_get_page (t->pml4, page->va) == NULL) && pml4_set_page (t->pml4, page->va, frame->kva, page->is_writable));
 
 	if (!result) {
 		return 0;
@@ -228,13 +240,72 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 
 /* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct supplemental_page_table *src UNUSED) {
+	// NOTE: current thread is child, containing dst table. src is from parent interrupt frame.
+	
+	if (!list_empty(&src->sptable_list)) {
+		struct list_elem *e;
+		
+		for (e = list_front(&src->sptable_list); e != list_end(&src->sptable_list); e = list_next(e))  {
+			struct page *src_p = list_entry(e, struct page, spt_elem);
+			
+			// Copy
+			void* src_upage = src_p->va;
+			bool writable = src_p->is_writable;
+			
+			// Candidate type, also if uninit (anon, file_backed...)
+			enum vm_type src_p_type = page_get_type(src_p);
+			
+			// if page is uninit
+			vm_initializer *init = src_p->uninit.init;
+			void *aux = src_p->uninit.aux;
+
+			if (src_p->operations->type == VM_UNINIT) {
+				// Uninitialized pages
+				bool alloc_with_init_result = vm_alloc_page_with_initializer(src_p_type, src_upage, writable, init, aux);
+				
+				if (!alloc_with_init_result)
+					goto err;
+			} else {
+				// Already initialized pages, no need to use init
+				bool alloc_result = vm_alloc_page(src_p_type, src_upage, writable);
+
+				if (!alloc_result)
+					goto err;
+
+				// Claim the page, cause they're already claimed. (Not uninit)
+				bool claim_result = vm_claim_page(src_upage);
+
+				if (!claim_result)
+					goto err;
+
+				// Cause we already allocated the page, src_upage must be in dst.
+				struct page *dst_p = spt_find_page(dst, src_upage);
+				memcpy(dst_p->frame->kva, src_p->frame->kva, PGSIZE);
+			}
+		}
+	}
+
+	return true;
+	
+err:
+	return false;
 }
 
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
-	/* TODO: Destroy all the supplemental_page_table hold by thread and
-	 * TODO: writeback all the modified contents to the storage. */
+	if (!list_empty(&spt->sptable_list)) {
+		struct list_elem *e = list_front(&spt->sptable_list);
+
+		while (e != list_end(&spt->sptable_list)) {
+			struct page *_page = list_entry(e, struct page, spt_elem);
+			
+			ASSERT(_page != NULL);
+
+			e = list_remove(&_page->spt_elem);
+			destroy(_page);
+			free(_page);
+		}
+	}
 }
