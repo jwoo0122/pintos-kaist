@@ -813,7 +813,6 @@ lazy_load_segment (struct page *page, void *aux) {
 	// More precisely, vm_claim_page from vm_try_handle_fault called by page_fault exception handler.
 	
 	file_seek(_aux->file, _aux->ofs);
-	free(_aux);
 	
 	return true;
 }
@@ -850,9 +849,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
 		struct args_for_lazy_load_segment *aux = malloc(sizeof(struct args_for_lazy_load_segment));
-		aux->file = file;
-		aux->page_read_bytes = page_read_bytes;
 		aux->ofs = ofs;
+		aux->page_read_bytes = page_read_bytes;
+		aux->file = file;
+		
 
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage, writable, lazy_load_segment, aux)) {
 			free(aux);

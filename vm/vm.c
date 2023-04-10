@@ -265,19 +265,19 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct
 				bool alloc_with_init_result = vm_alloc_page_with_initializer(src_p_type, src_upage, writable, init, aux);
 				
 				if (!alloc_with_init_result)
-					return false;
+					goto err;
 			} else {
 				// Already initialized pages, no need to use init
 				bool alloc_result = vm_alloc_page(src_p_type, src_upage, writable);
 
 				if (!alloc_result)
-					return false;
+					goto err;
 
 				// Claim the page, cause they're already claimed. (Not uninit)
 				bool claim_result = vm_claim_page(src_upage);
 
 				if (!claim_result)
-					return false;
+					goto err;
 
 				// Cause we already allocated the page, src_upage must be in dst.
 				struct page *dst_p = spt_find_page(dst, src_upage);
@@ -287,6 +287,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct
 	}
 
 	return true;
+	
+err:
+	return false;
 }
 
 /* Free the resource hold by the supplemental page table */

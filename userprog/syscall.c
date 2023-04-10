@@ -11,6 +11,7 @@
 #include "intrinsic.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "vm/vm.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -51,9 +52,15 @@ static struct file_with_descriptor *fd_to_file_with_descriptor(int fd) {
 static void user_memory_bound_check(void *address) {
 	struct thread *curr = thread_current();
 	
-	if (!is_user_vaddr(address) || address == NULL || pml4_get_page(curr->pml4, address) == NULL) {
+	if (!is_user_vaddr(address) || address == NULL) {
 		exit(-1);
 	}
+	
+	if (spt_find_page(&curr->spt, address) == NULL) {
+		exit(-1);
+	}
+	
+	return;
 }
 
 static void halt(void) {
