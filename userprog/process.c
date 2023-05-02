@@ -872,17 +872,18 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (struct intr_frame *if_) {
 	bool success = false;
-	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
+	void *stack_page_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 	
-	bool stack_address_installed = vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true);
+	bool stack_address_installed = vm_alloc_page(VM_ANON | VM_MARKER_0, stack_page_bottom, true);
 	
 	if (stack_address_installed) {
 		// No need to lazily loading, claim it directely after retreived stack page.
-		success = vm_claim_page(stack_bottom);
+		success = vm_claim_page(stack_page_bottom);
 		
 		if (success) {
 			// Pointing out stack pointer
 			if_->rsp = USER_STACK;
+			thread_current()->stack_page_end = stack_page_bottom;
 		}
 	}
 

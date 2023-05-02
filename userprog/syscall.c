@@ -51,11 +51,11 @@ static struct file_with_descriptor *fd_to_file_with_descriptor(int fd) {
 
 static void user_memory_bound_check(void *address) {
 	struct thread *curr = thread_current();
-	
+
 	if (!is_user_vaddr(address) || address == NULL) {
 		exit(-1);
 	}
-	
+
 	if (spt_find_page(&curr->spt, address) == NULL) {
 		exit(-1);
 	}
@@ -268,6 +268,8 @@ syscall_init (void) {
 */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
+	thread_current()->current_rsp = f->rsp;
+	
 	switch (f->R.rax) {
 		case SYS_HALT:
 			halt();
