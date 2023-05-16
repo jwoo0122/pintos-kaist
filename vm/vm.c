@@ -161,7 +161,7 @@ vm_get_frame (void) {
 static void
 vm_stack_growth (void *addr UNUSED) {
 	struct thread *t = thread_current();
-	bool alloc_result = vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
+	bool alloc_result = vm_alloc_page(VM_ANON | VM_MARKER_0, t->stack_page_end - PGSIZE, 1);
 	
 	if (alloc_result) {
 		t->stack_page_end -= PGSIZE;
