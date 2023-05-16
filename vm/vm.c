@@ -160,6 +160,12 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	struct thread *t = thread_current();
+	bool alloc_result = vm_alloc_page(VM_ANON | VM_MARKER_0, t->stack_page_end - PGSIZE, 1);
+	
+	if (alloc_result) {
+		t->stack_page_end -= PGSIZE;
+	}
 }
 
 /* Handle the fault on write_protected page */
@@ -178,14 +184,29 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	if (is_kernel_vaddr(addr)) {
 		return false;
 	}
-	
+
 	if (not_present) {
+		struct thread *t = thread_current();
+		void* current_rsp = user ? f->rsp : t->current_rsp;
+		
 		if (!vm_claim_page(addr)) {
+			// x86 Push occurs fault 8 bytes below the rsp, so check the addr is 8bytes under.
+			bool is_out_of_stack = current_rsp - 8 <= addr;
+			bool is_over_1MB_stack = USER_STACK - 1000000 > addr;
+			bool is_in_stack = USER_STACK >= addr;
+
+			if (is_out_of_stack && !is_over_1MB_stack && is_in_stack) {
+				vm_stack_growth(addr);
+				return true;
+			}
+			
 			return false;
 		}
 
 		return true;
 	}
+	
+	return false;
 }
 
 /* Free the page.
@@ -304,8 +325,7 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 			ASSERT(_page != NULL);
 
 			e = list_remove(&_page->spt_elem);
-			destroy(_page);
-			free(_page);
+			vm_dealloc_page(_page);
 		}
 	}
 }
