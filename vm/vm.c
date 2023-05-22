@@ -221,7 +221,6 @@ vm_claim_page (void *va UNUSED) {
 	struct page *page = spt_find_page(&t->spt, va);
 	
 	if (page == NULL) {
-		printf("no page\n");
 		return 0;
 	}
 	

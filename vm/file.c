@@ -34,10 +34,7 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 /* Swap in the page by read contents from the file. */
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
-	printf("[1]\n");
 	struct file_page *file_page UNUSED = &page->file;
-	printf("[2]\n");
-	return true;
 }
 
 /* Swap out the page by writeback contents to the file. */
