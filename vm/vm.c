@@ -65,9 +65,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 				break;
 		}
 
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
 		spt_page_for_user_process->is_writable = writable;
 		return spt_insert_page(spt, spt_page_for_user_process);
 	}
@@ -224,6 +221,7 @@ vm_claim_page (void *va UNUSED) {
 	struct page *page = spt_find_page(&t->spt, va);
 	
 	if (page == NULL) {
+		printf("no page\n");
 		return 0;
 	}
 	
@@ -250,7 +248,9 @@ vm_do_claim_page (struct page *page) {
 		return 0;
 	}
 
-	return swap_in (page, frame->kva);
+	bool result2 = swap_in (page, frame->kva);
+	
+	return result2;
 }
 
 /* Initialize new supplemental page table */
