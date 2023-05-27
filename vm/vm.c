@@ -210,6 +210,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
  * DO NOT MODIFY THIS FUNCTION. */
 void
 vm_dealloc_page (struct page *page) {
+	// printf("dealloc_page %p\n", page->va);
 	destroy (page);
 	free (page);
 }

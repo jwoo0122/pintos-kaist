@@ -46,7 +46,24 @@ file_backed_swap_out (struct page *page) {
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
+	//if dirty, write back to file
+	struct args_for_lazy_load_segment* aux = page->uninit.aux;
+	struct thread *t = thread_current();
+
+	// printf("dirty\n");
+	if (pml4_is_dirty (t->pml4, page->va)){
+		// printf("file length %d, ofs %d, read bytes %d\n", file_length(aux->file), aux->ofs, aux->page_read_bytes);
+		file_seek (aux->file, aux->ofs);
+		int result = file_write (aux->file, page->va, aux->page_read_bytes);
+		// printf("write bytes %d\n", result);
+	}
+
+	file_close (aux->file);
+
+	if (page->frame != NULL) {
+		list_remove (&page->frame->frt_elem);
+		free (page->frame);
+	}
 }
 
 /* Do the mmap */

@@ -253,6 +253,10 @@ static void* mmap(void *addr, size_t length, int writable, int fd, off_t offset)
 		return NULL;
 	}
 	
+	if (offset % PGSIZE != 0) {
+		return NULL;
+	}
+	
 	/* Address must not be null and be page-aligned */
 	if (addr == NULL || pg_round_down(addr) != addr || is_kernel_vaddr(addr)) {
 		return NULL;

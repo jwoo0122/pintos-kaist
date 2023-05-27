@@ -356,7 +356,7 @@ process_exit (void) {
 	
 	/* Wait for parent to accept my exit */
 	sema_down(&curr->exit_catch_signal);
-
+	
 	/* Parent received my status. Now I can exit my self. */
 	process_cleanup ();
 }
