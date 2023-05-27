@@ -65,9 +65,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 				break;
 		}
 
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
 		spt_page_for_user_process->is_writable = writable;
 		return spt_insert_page(spt, spt_page_for_user_process);
 	}
@@ -213,6 +210,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
  * DO NOT MODIFY THIS FUNCTION. */
 void
 vm_dealloc_page (struct page *page) {
+	// printf("dealloc_page %p\n", page->va);
 	destroy (page);
 	free (page);
 }
@@ -250,7 +248,9 @@ vm_do_claim_page (struct page *page) {
 		return 0;
 	}
 
-	return swap_in (page, frame->kva);
+	bool result2 = swap_in (page, frame->kva);
+	
+	return result2;
 }
 
 /* Initialize new supplemental page table */

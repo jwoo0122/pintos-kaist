@@ -10,4 +10,14 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (struct thread *next);
 
+struct args_for_lazy_load_segment {
+	struct file *file;
+	size_t page_read_bytes;
+	off_t ofs;
+};
+
 #endif /* userprog/process.h */
+
+#ifdef VM
+bool lazy_load_segment (struct page *page, void *aux);
+#endif

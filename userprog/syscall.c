@@ -247,6 +247,42 @@ void close(int fd) {
 	lock_release(&access_filesys);
 }
 
+static void* mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+	/* length must be larger than 0 */
+	if (length <= 0) {
+		return NULL;
+	}
+	
+	if (offset % PGSIZE != 0) {
+		return NULL;
+	}
+	
+	/* Address must not be null and be page-aligned */
+	if (addr == NULL || pg_round_down(addr) != addr || is_kernel_vaddr(addr)) {
+		return NULL;
+	}
+	
+	/* fd must not 0 and 1 */
+	if (fd == 0 || fd == 1) {
+		return NULL;
+	}
+	
+	/* Should not be already allocated address */
+	struct thread *t = thread_current();
+	if (spt_find_page(&t->spt, addr)) {
+		return NULL;
+	}
+	
+	/* File not exist */
+	struct file_with_descriptor *f = fd_to_file_with_descriptor(fd);
+	
+	if (f == NULL) {
+		return NULL;
+	}
+	
+	return do_mmap(addr, length, writable, f->_file, offset);
+}
+
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -312,6 +348,12 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			break;
 		case SYS_CLOSE:
 			close(f->R.rdi);
+			break;
+		case SYS_MMAP:
+			f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			break;
+		case SYS_MUNMAP:
+			do_munmap(f->R.rdi);
 			break;
 	}
 }
